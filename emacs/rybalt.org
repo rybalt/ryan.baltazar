@@ -1,0 +1,213 @@
+#+TITLE: Rybalt Emacs Integration — Design & Reference
+#+AUTHOR: Ryan Baltazar
+#+CREATED: [2026-03-27]
+
+* Overview
+
+Emacs integration for the rybalt toolset.  Provides workspace-aware fuzzy file navigation across multi-repo project structures, a C# LSP layer for umbrella projects, and a custom navigator panel (treemacs + MRU buffer list).
+
+The integration is split across several modules loaded from =post-init.el=:
+
+| Module              | Purpose                                          |
+|---------------------+--------------------------------------------------|
+| [[file:rb-setup.el][rb-setup.el]]         | Workspace commands, leader bindings, git browser |
+| [[file:rb-csharp.el][rb-csharp.el]]        | C# tree-sitter + eglot/csharp-ls integration    |
+| [[file:rb-buffers.el][rb-buffers.el]]       | MRU buffer list side panel                       |
+| [[file:rb-org-todos.el][rb-org-todos.el]]     | Org-mode TODO keyword sequences                  |
+
+* Workspace Navigation (=rb-setup.el=)
+
+** Workspace Root
+
+=rb-workspace-root= is a global variable holding the directory used by =SPC w= commands.  It defaults to =default-directory= at Emacs startup (the cwd where the daemon or emacsclient was launched).
+
+When the daemon starts via launchd, this defaults to =/=.  Use =SPC w w= to set the correct workspace.
+
+=consult-fd= and =consult-ripgrep= operate against this root, giving cross-repo file finding and grep without a monorepo.
+
+** .fdignore
+
+Each workspace root should have an =.fdignore= to exclude generated directories from =fd= searches.  Example for a Unity workspace:
+
+#+begin_src text
+Library/
+artifacts/
+.git/
+node_modules/
+project-gen/
+Temp/
+.idea/
+obj/
+Logs/
+UserSettings/
+#+end_src
+
+** Changed Files Browser (=SPC g d=)
+
+=rb-changed-files= uses =consult--multi= with three sources (staged, unstaged, untracked) backed by =magit-git-lines= for =--numstat= annotations.  Each candidate shows =+lines -lines= in the marginalia.
+
+Unity =.meta= files are filtered out by =rb--filter-meta=.
+
+* C# Development (=rb-csharp.el=)
+
+Isolated module for C# editing with tree-sitter highlighting and LSP via eglot + [[https://github.com/razzmatazz/csharp-language-server][csharp-ls]].  Comment out the load line in =post-init.el= to disable.
+
+** Prerequisites
+
+#+begin_src shell
+dotnet tool install --global csharp-ls
+#+end_src
+
+The tree-sitter C# grammar is installed automatically on first load if missing.
+
+** Umbrella Projects
+
+Some project structures have multiple repositories under a shared umbrella directory, with the =.sln= file living in a test project:
+
+#+begin_example
+UmbrellaProject/                         (umbrella, not a git repo)
+├── package-a/.git                       (package repo)
+├── package-b/.git                       (package repo)
+├── TestProjects/
+│   └── TestProject/
+│       └── TestProject.sln              (.sln + .csproj files)
+└── (no .git)
+#+end_example
+
+Key constraints:
+- There is no =.git= at the umbrella root — each package is its own git repo.
+- csharp-ls needs the =.sln= to resolve types across packages.
+- All packages must share a single eglot server instance for cross-package go-to-definition.
+
+** How the Solution Path Works
+
+1. =rb-csharp-solution= — a buffer-local variable set via =.dir-locals.el=, holding the =.sln= path relative to the umbrella root.
+2. =rb--csharp-project-find= — added to =project-find-functions=, walks up from the current file using =locate-dominating-file= with a predicate that checks whether the =.sln= resolves.  Returns the umbrella root as a =transient= project.  Only activates in =csharp-mode= / =csharp-ts-mode= buffers.
+3. =rb--csharp-ls-contact= — eglot contact function (arity-2: receives interactive flag + project).  Passes =--solution <absolute-path>= to csharp-ls when =rb-csharp-solution= is set.
+
+Non-C# buffers are unaffected and continue to use per-repo =.git= roots for =project.el=.
+
+** Configuration via =.dir-locals.el=
+
+Place at the umbrella root:
+
+#+begin_src elisp
+((csharp-ts-mode
+  . ((rb-csharp-solution . "TestProjects/TestProject/TestProject.sln")))
+ (csharp-mode
+  . ((rb-csharp-solution . "TestProjects/TestProject/TestProject.sln"))))
+#+end_src
+
+** Session Override
+
+To temporarily point at a different =.sln= without editing =.dir-locals.el=:
+
+#+begin_example
+M-x rb-set-csharp-solution   → pick the .sln file
+M-x eglot-reconnect          → restart with the new solution
+#+end_example
+
+** Without an Umbrella
+
+When opening a =.cs= file with no =rb-csharp-solution= set, csharp-ls starts without =--solution= and attempts its own auto-discovery.
+
+* Navigator Panel (=rb-buffers.el= + treemacs)
+
+=SPC t t= toggles a combined navigator: treemacs file tree on the bottom-left, MRU buffer list on the top-left.
+
+#+begin_example
+ ┌─────────────────────────┬──────────────────────────────────┐
+ │ Buffers                 │                                  │
+ │  FileA.cs               │                                  │
+ │ ● FileB.cs              │                                  │
+ │  rb-setup.el            │  (main editing window)           │
+ ├─────────────────────────┤                                  │
+ │ Treemacs                │                                  │
+ │ project-name            │                                  │
+ │ ├── Runtime             │                                  │
+ │ │   ├── ► FileA.cs ◄    │                                  │
+ │ │   └── ...             │                                  │
+ │ └── Tests               │                                  │
+ └─────────────────────────┴──────────────────────────────────┘
+#+end_example
+
+** Buffer Panel
+
+- Derived from =special-mode= (read-only, no insert)
+- =display-buffer-in-side-window= with =side: left=, =slot: -2= (treemacs uses slot -1/0, so -2 sits above)
+- =window-height: 0.20= (20% of frame height); width inherited from the treemacs column
+- Evil initial state: =motion= (j/k/q/RET work; =q= toggles the whole navigator)
+
+*** Buffer Filtering
+
+- Included: file-visiting buffers + useful special buffers (eat, ielm, shell, term, vterm, eshell, comint, =*scratch*=, =*Messages*=)
+- Excluded: space-prefixed internal buffers, treemacs buffers, minibuffers, the panel itself
+
+*** Display
+
+- Each line: =[nerd-icon] [modified ●] filename=
+- Auto-disambiguate: when two buffers share a basename, append =<parent-dir>= (e.g. =package.json<project>=)
+- Modified indicator: red =●= for unsaved buffers
+- Order: =buffer-list= returns MRU natively
+
+*** Live Refresh
+
+=buffer-list-update-hook= triggers a debounced refresh (50ms idle timer).  Hooks are installed when the panel is shown and removed when hidden.
+
+** Treemacs Configuration
+
+Key settings in =post-init.el=:
+
+| Setting                             | Value      | Effect                                |
+|-------------------------------------+------------+---------------------------------------|
+| =treemacs-project-follow-cleanup=   | =t=        | Auto-collapse non-ancestor dirs       |
+| =treemacs-follow-mode=              | =t=        | Sync tree to current buffer           |
+| =treemacs-filewatch-mode=           | =t=        | Auto-update tree on filesystem change |
+| =treemacs-git-mode=                 | =deferred= | Async git status colors               |
+| =treemacs-evil= (package)           | loaded     | =j/k/h/l= navigation in tree         |
+| =treemacs-nerd-icons= (package)     | loaded     | Nerd Font icons instead of PNGs       |
+
+** Toggle Mechanics
+
+=rb-toggle-navigator= checks =treemacs-current-visibility=:
+- *Show*: calls =(treemacs)= first (establishes the side column), then =(rb-buffers--show)= slots in above.  Installs refresh hooks.
+- *Hide*: closes the buffer panel window, tears down hooks, then closes the treemacs window.
+
+* Org-mode Integration (=rb-org-todos.el=)
+
+Adds a =DQ_= (Design Question) keyword sequence for tracking design decisions in org-mode research documents.  See the commentary in [[file:rb-org-todos.el][rb-org-todos.el]] for states, property drawer conventions, and examples.
+
+* Daemon Management
+
+The Emacs daemon auto-starts on login via =~/Library/LaunchAgents/gnu.emacs.daemon.plist=.
+
+* Files
+
+| File                                            | Purpose                                               |
+|-------------------------------------------------+-------------------------------------------------------|
+| =emacs/rb-setup.el=                             | Elisp: workspace functions, bindings                  |
+| =emacs/rb-csharp.el=                            | Elisp: C# tree-sitter + eglot/csharp-ls integration  |
+| =emacs/rb-buffers.el=                           | Elisp: MRU buffer list side panel                     |
+| =emacs/rb-org-todos.el=                         | Elisp: org-mode TODO keyword sequences                |
+| =~/Library/LaunchAgents/gnu.emacs.daemon.plist= | launchd: auto-start daemon on login                   |
+| =~/.emacs.d/post-init.el=                       | Emacs config: package declarations + load calls       |
+
+* Deferred Improvements
+
+** TODO Nerd Font icons for C# files render as boxes
+
+=nerd-icons-icon-for-file= returns U+F031B for =.cs= files, which renders as a missing-glyph box.  The fix is =M-x nerd-icons-install-fonts= to install Symbols Nerd Font Mono, but this has not been done on the current machine.
+
+The broader question is whether to automate this (e.g. check on load and prompt) or just document it as a one-time setup step.
+
+** TODO Treemacs icon sizing on mixed-DPI displays
+
+=treemacs-resize-icons= was set to 44 (HiDPI) by the boilerplate config, which produced oversized icons.  22 worked but is currently commented out.  Needs testing across the mixed-DPI setup (Retina laptop + external monitor) to find the right default.
+
+** TODO Buffer panel: delete buffer action
+
+The buffer panel currently only supports visiting buffers (click / RET).  A =d= or =C-d= binding to kill the buffer under point and refresh the list would be useful.
+
+** TODO Buffer panel: highlight current buffer
+
+The active buffer (the one displayed in the main editing window) is not visually distinguished from others in the panel.  A different face or marker would make it easier to orient.

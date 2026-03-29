@@ -1,0 +1,177 @@
+#+TITLE: Rybalt Emacs Integration
+#+AUTHOR: Ryan Baltazar
+
+* Overview
+
+Emacs integration for the rybalt toolset.  Workspace-aware file navigation, C# LSP for umbrella projects, and a combined treemacs + buffer list navigator.
+
+For detailed component docs and design notes, see [[file:rybalt.org][rybalt.org]].
+
+* Prerequisites
+
+Emacs 29+ is required for =xdg-config-home= and =treesit= support.
+
+#+begin_src shell
+brew install emacs-plus@30 --with-native-comp
+#+end_src
+
+See [[https://github.com/d12frosted/homebrew-emacs-plus][emacs-plus]] for available flags (=--with-imagemagick=, icon options, etc.).
+
+** Required CLI tools
+
+#+begin_src shell
+brew install fd ripgrep git-delta
+#+end_src
+
+| Tool        | Used by                                           |
+|-------------+---------------------------------------------------|
+| =fd=        | =consult-fd= (=SPC w f=, =SPC r f= file finding)  |
+| =rg=        | =consult-ripgrep= (=SPC w g=, =SPC r g= grep)     |
+| =git-delta= | =magit-delta= (syntax-highlighted diffs in magit) |
+
+** Nerd Fonts
+
+Any [[https://www.nerdfonts.com/][Nerd Font]] is required for icons in treemacs, the buffer panel, and modeline. Pick whichever you prefer, e.g.:
+
+#+begin_src shell
+brew install font-jetbrains-mono-nerd-font  # or font-fira-code-nerd-font, etc.
+#+end_src
+
+** Emacs framework
+
+=post-init.el= is the user layer for [[https://github.com/jamescherti/minimal-emacs.d][minimal-emacs.d]]. Clone that framework first:
+
+#+begin_src shell
+git clone https://github.com/jamescherti/minimal-emacs.d ~/.emacs.d
+#+end_src
+
+** Optional
+
+| Tool            | Install                                  | Purpose                                     |
+|-----------------+------------------------------------------+---------------------------------------------|
+| =csharp-ls=     | =dotnet tool install --global csharp-ls= | C# LSP via eglot (=rb-csharp.el=)           |
+| =multimarkdown= | =brew install multimarkdown=             | Markdown preview in =markdown-mode=         |
+| =python3=       | (usually pre-installed)                  | Treemacs deferred git mode & dir collapsing |
+
+* Quick Setup
+
+1. Clone (or symlink) this repo so Emacs can find it via XDG:
+
+   #+begin_src shell
+   # On a personal machine, clone directly:
+   git clone <repo-url> ~/.config/rybalt
+
+   # On a work machine where the repo lives elsewhere:
+   ln -s /path/to/rybalt ~/.config/rybalt
+   #+end_src
+
+2. Symlink =post-init.el= and =custom.el= into =~/.emacs.d/=:
+
+   #+begin_src shell
+   ln -s ~/.config/rybalt/emacs/post-init.el ~/.emacs.d/post-init.el
+   ln -s ~/.config/rybalt/emacs/custom.el ~/.emacs.d/custom.el
+   #+end_src
+
+3. The modules are loaded automatically from =post-init.el= via =xdg-config-home=:
+
+   #+begin_src elisp
+   (defvar rb-emacs-dir
+     (expand-file-name "rybalt/emacs" (xdg-config-home))
+     "Directory containing rybalt emacs modules.")
+
+   (load (expand-file-name "rb-setup" rb-emacs-dir) nil t)
+   (load (expand-file-name "rb-csharp" rb-emacs-dir) nil t)    ; optional
+   (load (expand-file-name "rb-buffers" rb-emacs-dir) nil t)
+   (load (expand-file-name "rb-org-todos" rb-emacs-dir) nil t)  ; optional
+   #+end_src
+
+4. For C# umbrella projects, place a =.dir-locals.el= at the umbrella root:
+
+   #+begin_src elisp
+   ((csharp-ts-mode
+     . ((rb-csharp-solution . "TestProjects/YourProject/YourProject.sln")))
+    (csharp-mode
+     . ((rb-csharp-solution . "TestProjects/YourProject/YourProject.sln"))))
+   #+end_src
+
+* Keybindings
+
+All bindings use =SPC= as the Evil leader key.
+
+** Workspace (=SPC w=)
+
+| Binding   | Description                      |
+|-----------+----------------------------------|
+| =SPC w f= | Fuzzy-find file across all repos |
+| =SPC w g= | Ripgrep across all repos         |
+| =SPC w w= | Set workspace root               |
+
+** Repo (=SPC r=)
+
+| Binding   | Description                  |
+|-----------+------------------------------|
+| =SPC r f= | Find file in current repo    |
+| =SPC r g= | Grep in current repo         |
+| =SPC r p= | Switch to a different repo   |
+
+** Git (=SPC g=)
+
+| Binding   | Description                            |
+|-----------+----------------------------------------|
+| =SPC g g= | Magit status                           |
+| =SPC g d= | Browse staged/unstaged/untracked files |
+| =SPC g l= | Log for current branch                 |
+
+** Navigator (=SPC t=)
+
+| Binding   | Description                              |
+|-----------+------------------------------------------|
+| =SPC t t= | Toggle treemacs + buffer list navigator  |
+
+** Buffer / Line
+
+| Binding | Description                  |
+|---------+------------------------------|
+| =SPC b= | Switch buffer (with preview) |
+| =SPC l= | Search lines in buffer       |
+
+** Misc
+
+| Binding   | Description               |
+|-----------+---------------------------|
+| =SPC c c= | Pass-through to =C-c C-c= |
+| =] c=     | Next diff-hl hunk         |
+| =[ c=     | Previous diff-hl hunk     |
+
+** Treemacs (in tree window)
+
+| Key   | Action                        |
+|-------+-------------------------------|
+| =j=   | Move down                     |
+| =k=   | Move up                       |
+| =h=   | Collapse node / go to parent  |
+| =l=   | Expand node / visit file      |
+| =RET= | Open file / toggle directory  |
+| =o=   | Open-node actions menu        |
+| =q=   | Quit treemacs                 |
+| =gr=  | Refresh                       |
+
+** Buffer Panel (in buffer list window)
+
+| Key       | Action                     |
+|-----------+----------------------------|
+| =j=       | Move down                  |
+| =k=       | Move up                    |
+| =RET=     | Open buffer in main window |
+| =mouse-1= | Open buffer in main window |
+| =q=       | Toggle navigator off       |
+
+* Files
+
+| File            | Purpose                                      |
+|-----------------+----------------------------------------------|
+| [[file:rb-setup.el][rb-setup.el]]     | Workspace commands, leader bindings          |
+| [[file:rb-csharp.el][rb-csharp.el]]    | C# tree-sitter + eglot/csharp-ls             |
+| [[file:rb-buffers.el][rb-buffers.el]]   | MRU buffer list side panel                   |
+| [[file:rb-org-todos.el][rb-org-todos.el]] | Org-mode TODO keyword sequences              |
+| [[file:rybalt.org][rybalt.org]]      | Detailed design docs & deferred improvements |
