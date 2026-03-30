@@ -18,6 +18,11 @@
   ;; Initialize
   (exec-path-from-shell-initialize))
 
+(set-face-attribute 'default nil :family "FiraMono Nerd Font" :height 140)
+
+(setq dired-use-ls-dired nil)
+(tab-bar-mode -1)
+
 ;; Auto-revert in Emacs is a feature that automatically updates the
 ;; contents of a buffer to reflect changes made to the underlying file
 ;; on disk.
@@ -303,18 +308,46 @@
 (use-package eat
   :ensure t)
 
-(use-package claude-code-ide
-  :vc (:url "https://github.com/manzaltu/claude-code-ide.el" :rev :newest)
-  :bind ("C-c C-'" . claude-code-ide-menu) ; Set your favorite keybinding
+(use-package agent-shell
+  :ensure t
+  :bind ("C-c C-'" . agent-shell)
   :config
-  (setq claude-code-ide-terminal-backend 'eat)
-  (claude-code-ide-emacs-tools-setup)) ; Optionally enable Emacs MCP tools
+  (setq read-process-output-max (* 64 1024))
+  (evil-define-key 'insert agent-shell-mode-map (kbd "RET") #'newline)
+  (evil-define-key 'normal agent-shell-mode-map (kbd "RET") #'comint-send-input))
 
 (use-package doom-themes
   :ensure t
   :config
   (load-theme 'doom-monokai-pro t)
   (doom-themes-org-config))
+
+(use-package nyan-mode
+  :ensure t
+  :config
+  (nyan-mode 1))
+
+(use-package doom-modeline
+  :ensure t
+  :hook (after-init . doom-modeline-mode)
+  :custom
+  ;; Show
+  (doom-modeline-buffer-file-name-style 'truncate-upto-project)
+  (doom-modeline-modal t)
+  (doom-modeline-modal-icon nil)
+  (doom-modeline-modal-modern-icon nil)
+  ; keep nyan mode disabled, but installed. Re-enable for lulz.
+  ; (doom-modeline-nyan t)
+  (doom-modeline-checker-simple-format nil)
+  (doom-modeline-buffer-modification-icon t)
+  (doom-modeline-major-mode-icon t)
+  (doom-modeline-icon t)
+  ;; Hide
+  (doom-modeline-vcs-max-length 0)
+  (doom-modeline-buffer-encoding nil)
+  (doom-modeline-minor-modes nil)
+  (doom-modeline-env-version nil)
+  (doom-modeline-workspace-name nil))
 
 (use-package pulsar
   :ensure t
@@ -329,6 +362,13 @@
   :init
   (setq vertico-count 20
         vertico-cycle t))
+
+(use-package vertico-posframe
+  :ensure t
+  :custom
+  (vertico-posframe-poshandler #'posframe-poshandler-frame-top-center)
+  :config
+  (vertico-posframe-mode 1))
 
 ;; Fuzzy matching with space-separated tokens
 (use-package orderless
