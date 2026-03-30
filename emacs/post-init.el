@@ -335,6 +335,8 @@
 (use-package marginalia
   :hook (after-init . marginalia-mode))
 
+(scroll-bar-mode 1)
+
 (add-hook 'prog-mode-hook #'display-line-numbers-mode)
 (add-hook 'markdown-mode-hook #'display-line-numbers-mode)
 
