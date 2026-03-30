@@ -316,6 +316,13 @@
   (load-theme 'doom-monokai-pro t)
   (doom-themes-org-config))
 
+(use-package pulsar
+  :ensure t
+  :custom
+  (pulsar-pulse-on-window-change t)
+  :config
+  (pulsar-global-mode 1))
+
 ;; Vertical minibuffer completion UI
 (use-package vertico
   :hook (after-init . vertico-mode)
@@ -415,6 +422,7 @@
 
 ;; Rybalt Emacs integration
 ;; Modules are found via XDG: ~/.config/rybalt/emacs/
+(require 'xdg)
 (defvar rb-emacs-dir
   (expand-file-name "rybalt/emacs" (xdg-config-home))
   "Directory containing rybalt emacs modules.")
