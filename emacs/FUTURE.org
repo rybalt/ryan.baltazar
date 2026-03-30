@@ -1,0 +1,28 @@
+#+TITLE: Future Plugin Candidates
+#+AUTHOR: Ryan Baltazar
+
+Plugins and features to consider adding. Not currently needed, but worth revisiting.
+
+* C# / Unity
+
+| Plugin         | Purpose                                                | When to add                          |
+|----------------+--------------------------------------------------------+--------------------------------------|
+| =shader-mode=  | Syntax highlighting for =.shader=, =.cginc=, =.hlsl=  | If writing Unity shaders             |
+| =glsl-mode=    | Syntax highlighting for compute shaders / raw GLSL     | If writing compute shaders           |
+| =yasnippet=    | Snippet expansion (=[SerializeField]=, MonoBehaviour)  | If boilerplate becomes tedious       |
+
+* C++
+
+| Plugin          | Purpose                                      | When to add                           |
+|-----------------+----------------------------------------------+---------------------------------------|
+| =c-ts-mode=     | Tree-sitter C++ (built into Emacs 29+)       | When doing C++ work; pair with clangd |
+| =cmake-mode=    | CMake file syntax highlighting               | If C++ projects use CMake             |
+| =clang-format=  | Auto-format C++ on save via =clang-format=   | If team uses clang-format             |
+
+* General
+
+| Plugin              | Purpose                                               | When to add                                    |
+|---------------------+-------------------------------------------------------+------------------------------------------------|
+| =string-inflection= | Cycle between camelCase, PascalCase, snake_case        | Useful for cross-language work (C# + C++)      |
+| =dumb-jump=         | Fallback jump-to-definition when LSP doesn't cover it | If navigating generated code or missing symbols |
+| =imenu-list=        | Side panel showing functions/classes in current file   | If outline view would help orientation         |

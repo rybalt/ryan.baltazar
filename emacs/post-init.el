@@ -22,6 +22,8 @@
 
 (setq dired-use-ls-dired nil)
 (tab-bar-mode -1)
+(editorconfig-mode 1)
+(pixel-scroll-precision-mode 1)
 
 ;; Auto-revert in Emacs is a feature that automatically updates the
 ;; contents of a buffer to reflect changes made to the underlying file
@@ -158,6 +160,17 @@
   (setq evil-collection-setup-minibuffer t)
   :config
   (evil-collection-init))
+
+(use-package avy
+  :ensure t
+  :config
+  (evil-define-key 'normal 'global
+    (kbd "SPC SPC w") #'avy-goto-word-1-below
+    (kbd "SPC SPC b") #'avy-goto-word-1-above
+    (kbd "SPC SPC f") #'avy-goto-char-in-line
+    (kbd "SPC SPC j") #'avy-goto-line-below
+    (kbd "SPC SPC k") #'avy-goto-line-above
+    (kbd "SPC SPC s") #'avy-goto-char-2))
 
 ;; The goto-chg package is useful with Evil to jump directly to the most recent
 ;; edit location. This mirrors Vim's change navigation, allowing fast return to
@@ -325,7 +338,7 @@
 (use-package nyan-mode
   :ensure t
   :config
-  (nyan-mode 1))
+  (nyan-mode -1))
 
 (use-package doom-modeline
   :ensure t
@@ -347,7 +360,14 @@
   (doom-modeline-buffer-encoding nil)
   (doom-modeline-minor-modes nil)
   (doom-modeline-env-version nil)
-  (doom-modeline-workspace-name nil))
+  (doom-modeline-workspace-name nil)
+  ;; Appearance
+  (doom-modeline-height 30)
+  (doom-modeline-bar-width 4)
+  :config
+  ;; Flat modeline — remove 3D box border
+  (set-face-attribute 'mode-line nil :box nil)
+  (set-face-attribute 'mode-line-inactive nil :box nil))
 
 (use-package pulsar
   :ensure t
@@ -383,6 +403,10 @@
   :hook (after-init . marginalia-mode))
 
 (scroll-bar-mode 1)
+
+(use-package indent-bars
+  :ensure t
+  :hook (prog-mode . indent-bars-mode))
 
 (add-hook 'prog-mode-hook #'display-line-numbers-mode)
 (add-hook 'markdown-mode-hook #'display-line-numbers-mode)
