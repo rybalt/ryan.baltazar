@@ -5,10 +5,10 @@ that apply to all projects.
 
 ## Setup
 
-Symlink `CLAUDE.md` into your Claude Code config directory:
+Symlink `CLAUDE_home.md` into your Claude Code config directory:
 
 ```sh
-ln -s ~/.config/rybalt/claude/CLAUDE.md ~/.claude/CLAUDE.md
+ln -s ~/.config/rybalt/claude/CLAUDE_home.md ~/.claude/CLAUDE.md
 ```
 
 This makes the preferences load automatically for every Claude Code session.
