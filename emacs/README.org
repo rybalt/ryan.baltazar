@@ -3,7 +3,7 @@
 
 * Overview
 
-Emacs integration for the rybalt toolset.  Workspace-aware file navigation, C# LSP for umbrella projects, and a combined treemacs + buffer list navigator.
+Emacs integration for the rybalt toolset.  Workspace-aware file navigation, C# LSP for umbrella projects, a combined treemacs + buffer list navigator, and a modern UI layer (doom-modeline, vertico-posframe, indent-bars, pixel-scroll, avy, pulsar).
 
 For detailed component docs and design notes, see [[file:rybalt.org][rybalt.org]].
 
@@ -138,6 +138,17 @@ All bindings use =SPC= as the Evil leader key.
 | =SPC b= | Switch buffer (with preview) |
 | =SPC l= | Search lines in buffer       |
 
+** Jump (=SPC SPC=, via avy)
+
+| Binding       | Description                      |
+|---------------+----------------------------------|
+| =SPC SPC w=   | Jump to word below               |
+| =SPC SPC b=   | Jump to word above               |
+| =SPC SPC f=   | Jump to char in current line     |
+| =SPC SPC j=   | Jump to line below               |
+| =SPC SPC k=   | Jump to line above               |
+| =SPC SPC s=   | Jump to 2-char sequence (snipe)  |
+
 ** Misc
 
 | Binding   | Description               |
@@ -168,6 +179,87 @@ All bindings use =SPC= as the Evil leader key.
 | =RET=     | Open buffer in main window |
 | =mouse-1= | Open buffer in main window |
 | =q=       | Toggle navigator off       |
+
+* Installed Packages
+
+** Core / Evil
+
+| Package              | Purpose                                                    |
+|----------------------+------------------------------------------------------------|
+| =evil=               | Vim emulation layer                                        |
+| =evil-leader=        | =SPC= as leader key for custom bindings                   |
+| =evil-collection=    | Consistent evil keybindings across Emacs modes             |
+| =goto-chg=           | Jump to last edit location (=g;= / =g,=)                  |
+| =which-key=          | Shows available keybindings after pressing a prefix key    |
+| =exec-path-from-shell= | Imports shell PATH into GUI Emacs (macOS)               |
+
+** Navigation & Completion
+
+| Package            | Purpose                                                    |
+|--------------------+------------------------------------------------------------|
+| =vertico=          | Vertical minibuffer completion UI                          |
+| =vertico-posframe= | Renders vertico as a floating frame at top center          |
+| =orderless=        | Fuzzy matching with space-separated tokens                 |
+| =marginalia=       | Rich annotations in minibuffer candidates                  |
+| =consult=          | Enhanced search commands (find file, ripgrep, buffer, line)|
+| =embark=           | Context actions on minibuffer candidates (=C-.=)           |
+| =embark-consult=   | Embark integration with consult                            |
+| =avy=              | Jump to visible text with 2-3 keystrokes                   |
+
+** File Explorer & Projects
+
+| Package              | Purpose                                                  |
+|----------------------+----------------------------------------------------------|
+| =treemacs=           | File tree sidebar                                        |
+| =treemacs-evil=      | Evil keybindings for treemacs                            |
+| =treemacs-nerd-icons= | Nerd font icons in treemacs                             |
+| =project=            | Built-in project detection and commands                  |
+
+** Git
+
+| Package        | Purpose                                                    |
+|----------------+------------------------------------------------------------|
+| =magit=        | Git porcelain — staging, committing, branching, etc.       |
+| =magit-delta=  | Syntax-highlighted diffs in magit via =git-delta=          |
+| =diff-hl=      | Git change indicators in the fringe                        |
+
+** UI & Appearance
+
+| Package          | Purpose                                                    |
+|------------------+------------------------------------------------------------|
+| =doom-themes=    | Theme collection (using =doom-monokai-pro=)                |
+| =doom-modeline=  | Modern, segment-based mode-line                            |
+| =nyan-mode=      | Nyan Cat file position indicator (installed, disabled)     |
+| =pulsar=         | Pulse current line on window switch                        |
+| =indent-bars=    | VS Code-style indentation guide lines                      |
+| =rainbow-delimiters= | Rainbow-colored parentheses in elisp                  |
+| =vim-tab-bar=    | Vim-style tab bar (disabled via =tab-bar-mode -1=)         |
+
+** Editing & Tools
+
+| Package        | Purpose                                                    |
+|----------------+------------------------------------------------------------|
+| =editorconfig= | Reads =.editorconfig= for indent style, tab width, etc.   |
+| =markdown-mode= | Markdown/GFM editing and preview                          |
+| =ediff=        | Side-by-side diff viewer (built-in, configured)            |
+
+** AI / Agent
+
+| Package        | Purpose                                                    |
+|----------------+------------------------------------------------------------|
+| =agent-shell=  | Claude Code integration via ACP (comint-based)             |
+| =eat=          | Terminal emulator (available as alternative backend)       |
+
+** Built-in Features (no package required)
+
+| Feature                       | Purpose                                     |
+|-------------------------------+---------------------------------------------|
+| =pixel-scroll-precision-mode= | Smooth pixel-level scrolling               |
+| =editorconfig-mode=           | Apply =.editorconfig= settings             |
+| =autorevert=                  | Auto-refresh buffers when files change      |
+| =recentf=                     | Track recently opened files                 |
+| =savehist=                    | Persist minibuffer history across sessions  |
+| =save-place=                  | Remember cursor position in files           |
 
 * Files
 
