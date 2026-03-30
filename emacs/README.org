@@ -37,6 +37,8 @@ Any [[https://www.nerdfonts.com/][Nerd Font]] is required for icons in treemacs,
 brew install font-jetbrains-mono-nerd-font  # or font-fira-code-nerd-font, etc.
 #+end_src
 
+After first launch, run =M-x nerd-icons-install-fonts= to install the icon glyphs used by doom-modeline.
+
 ** Emacs framework
 
 =post-init.el= is the user layer for [[https://github.com/jamescherti/minimal-emacs.d][minimal-emacs.d]]. Clone that framework first:
@@ -47,11 +49,12 @@ git clone https://github.com/jamescherti/minimal-emacs.d ~/.emacs.d
 
 ** Optional
 
-| Tool            | Install                                  | Purpose                                     |
-|-----------------+------------------------------------------+---------------------------------------------|
-| =csharp-ls=     | =dotnet tool install --global csharp-ls= | C# LSP via eglot (=rb-csharp.el=)           |
-| =multimarkdown= | =brew install multimarkdown=             | Markdown preview in =markdown-mode=         |
-| =python3=       | (usually pre-installed)                  | Treemacs deferred git mode & dir collapsing |
+| Tool               | Install                                           | Purpose                                             |
+|--------------------+---------------------------------------------------+-----------------------------------------------------|
+| =claude-agent-acp= | =npm install -g @zed-industries/claude-agent-acp= | ACP bridge for =agent-shell= (Claude Code in Emacs) |
+| =csharp-ls=        | =dotnet tool install --global csharp-ls=          | C# LSP via eglot (=rb-csharp.el=)                   |
+| =multimarkdown=    | =brew install multimarkdown=                      | Markdown preview in =markdown-mode=                 |
+| =python3=          | (usually pre-installed)                           | Treemacs deferred git mode & dir collapsing         |
 
 * Quick Setup
 
