@@ -51,7 +51,6 @@ git clone https://github.com/jamescherti/minimal-emacs.d ~/.emacs.d
 
 | Tool               | Install                                           | Purpose                                             |
 |--------------------+---------------------------------------------------+-----------------------------------------------------|
-| =claude-agent-acp= | =npm install -g @zed-industries/claude-agent-acp= | ACP bridge for =agent-shell= (Claude Code in Emacs) |
 | =csharp-ls=        | =dotnet tool install --global csharp-ls=          | C# LSP via eglot (=rb-csharp.el=)                   |
 | =multimarkdown=    | =brew install multimarkdown=                      | Markdown preview in =markdown-mode=                 |
 | =python3=          | (usually pre-installed)                           | Treemacs deferred git mode & dir collapsing         |
@@ -88,7 +87,13 @@ git clone https://github.com/jamescherti/minimal-emacs.d ~/.emacs.d
    (load (expand-file-name "rb-org-todos" rb-emacs-dir) nil t)  ; optional
    #+end_src
 
-4. For C# umbrella projects, place a =.dir-locals.el= at the umbrella root:
+4. For umbrella workspaces, use =SPC w w= (=rb-init-workspace=) to create a =.projectile= marker file and register the project.  Or create it manually:
+
+   #+begin_src shell
+   touch /path/to/UmbrellaProject/.projectile
+   #+end_src
+
+5. For C# umbrella projects, place a =.dir-locals.el= at the umbrella root:
 
    #+begin_src elisp
    ((csharp-ts-mode
@@ -103,19 +108,19 @@ All bindings use =SPC= as the Evil leader key.
 
 ** Workspace (=SPC w=)
 
-| Binding   | Description                      |
-|-----------+----------------------------------|
-| =SPC w f= | Fuzzy-find file across all repos |
-| =SPC w g= | Ripgrep across all repos         |
-| =SPC w w= | Set workspace root               |
+| Binding   | Description                             |
+|-----------+-----------------------------------------|
+| =SPC w f= | Fuzzy-find file across workspace        |
+| =SPC w g= | Ripgrep across workspace                |
+| =SPC w w= | Initialize new umbrella workspace       |
 
 ** Repo (=SPC r=)
 
-| Binding   | Description                  |
-|-----------+------------------------------|
-| =SPC r f= | Find file in current repo    |
-| =SPC r g= | Grep in current repo         |
-| =SPC r p= | Switch to a different repo   |
+| Binding   | Description                     |
+|-----------+---------------------------------|
+| =SPC r f= | Find file in nearest git repo   |
+| =SPC r g= | Grep in nearest git repo        |
+| =SPC r p= | Switch to a different project   |
 
 ** Git (=SPC g=)
 
@@ -213,7 +218,8 @@ All bindings use =SPC= as the Evil leader key.
 | =treemacs=           | File tree sidebar                                        |
 | =treemacs-evil=      | Evil keybindings for treemacs                            |
 | =treemacs-nerd-icons= | Nerd font icons in treemacs                             |
-| =project=            | Built-in project detection and commands                  |
+| =projectile=         | Workspace root detection via =.projectile= markers      |
+| =project=            | Built-in project detection for eglot/LSP                |
 
 ** Git
 
@@ -243,12 +249,12 @@ All bindings use =SPC= as the Evil leader key.
 | =markdown-mode= | Markdown/GFM editing and preview                          |
 | =ediff=        | Side-by-side diff viewer (built-in, configured)            |
 
-** AI / Agent
+** Terminal & IDE Integration
 
 | Package        | Purpose                                                    |
 |----------------+------------------------------------------------------------|
-| =agent-shell=  | Claude Code integration via ACP (comint-based)             |
-| =eat=          | Terminal emulator (available as alternative backend)       |
+| =eat=          | Terminal emulator                                          |
+| =monet=        | Claude Code IDE integration via WebSocket (file browsing, diagnostics, diffs) |
 
 ** Built-in Features (no package required)
 
@@ -265,7 +271,7 @@ All bindings use =SPC= as the Evil leader key.
 
 | File            | Purpose                                      |
 |-----------------+----------------------------------------------|
-| [[file:rb-setup.el][rb-setup.el]]     | Workspace commands, leader bindings          |
+| [[file:rb-setup.el][rb-setup.el]]     | Workspace commands, leader bindings (projectile-based) |
 | [[file:rb-csharp.el][rb-csharp.el]]    | C# tree-sitter + eglot/csharp-ls             |
 | [[file:rb-buffers.el][rb-buffers.el]]   | MRU buffer list side panel                   |
 | [[file:rb-org-todos.el][rb-org-todos.el]] | Org-mode TODO keyword sequences              |
