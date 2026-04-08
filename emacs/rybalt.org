@@ -10,20 +10,36 @@ The integration is split across several modules loaded from =post-init.el=:
 
 | Module              | Purpose                                          |
 |---------------------+--------------------------------------------------|
-| [[file:rb-setup.el][rb-setup.el]]         | Workspace commands, leader bindings, git browser |
+| [[file:rb-setup.el][rb-setup.el]]         | Workspace commands (projectile-based), leader bindings, git browser |
 | [[file:rb-csharp.el][rb-csharp.el]]        | C# tree-sitter + eglot/csharp-ls integration    |
-| [[file:rb-buffers.el][rb-buffers.el]]       | MRU buffer list side panel                       |
+| [[file:rb-buffers.el][rb-buffers.el]]       | MRU buffer list side panel + navigator toggle    |
+| [[file:rb-diffs.el][rb-diffs.el]]         | Git diff navigator panel                         |
 | [[file:rb-org-todos.el][rb-org-todos.el]]     | Org-mode TODO keyword sequences                  |
 
 * Workspace Navigation (=rb-setup.el=)
 
-** Workspace Root
+** Workspace Root (Projectile)
 
-=rb-workspace-root= is a global variable holding the directory used by =SPC w= commands.  It defaults to =default-directory= at Emacs startup (the cwd where the daemon or emacsclient was launched).
+=rb-workspace-root= is a function that returns the current workspace root via [[https://docs.projectile.mx/projectile/][Projectile]].  Projectile detects the root by walking up from the current file looking for a =.projectile= marker file.  This replaces the former manual =defvar= approach.
 
-When the daemon starts via launchd, this defaults to =/=.  Use =SPC w w= to set the correct workspace.
+Projectile is layered on top of the existing stack — it handles root detection only.  File finding and grepping use =consult-fd= / =consult-ripgrep=.  =project.el= remains for eglot/LSP integration.
 
-=consult-fd= and =consult-ripgrep= operate against this root, giving cross-repo file finding and grep without a monorepo.
+*** Two scopes
+
+| Scope     | Function           | Detection          | Binding   |
+|-----------+--------------------+--------------------+-----------|
+| Workspace | =rb-workspace-root= | =.projectile= marker (via projectile) | =SPC w f/g= |
+| Repo      | =rb-repo-root=     | Nearest =.git=, fallback to workspace | =SPC r f/g= |
+
+*** Initializing a New Umbrella Workspace
+
+=SPC w w= (=rb-init-workspace=) creates a =.projectile= marker file at the chosen directory, registers it with projectile, and switches to it.  This is the recommended way to set up a new umbrella project.
+
+The =.projectile= file is empty — projectile only checks for its existence, not its content.  File exclusions are handled by =.fdignore= (for =fd=) and =.gitignore= (for =rg=), not by =.projectile= content.
+
+*** Daemon startup
+
+When the daemon starts via launchd with no =.projectile= ancestor, =rb-workspace-root= falls back to =default-directory=.  Open a file under an umbrella project and the root is detected automatically.
 
 ** .fdignore
 
@@ -170,8 +186,8 @@ Key settings in =post-init.el=:
 ** Toggle Mechanics
 
 =rb-toggle-navigator= checks =treemacs-current-visibility=:
-- *Show*: calls =(treemacs)= first (establishes the side column), then =(rb-buffers--show)= slots in above.  Installs refresh hooks.
-- *Hide*: closes the buffer panel window, tears down hooks, then closes the treemacs window.
+- *Show*: calls =(treemacs)= first (establishes the side column), then =rb-toggle-navigator--ensure-treemacs-root= adds the projectile workspace root to treemacs (idempotent — ignored if already registered).  Then =(rb-buffers--show)= and =(rb-diffs--show)= slot in above and below.  Installs refresh hooks.
+- *Hide*: closes the buffer panel and diff panel windows, tears down hooks, then closes the treemacs window.
 
 * Org-mode Integration (=rb-org-todos.el=)
 
@@ -185,9 +201,10 @@ The Emacs daemon auto-starts on login via =~/Library/LaunchAgents/gnu.emacs.daem
 
 | File                                            | Purpose                                               |
 |-------------------------------------------------+-------------------------------------------------------|
-| =emacs/rb-setup.el=                             | Elisp: workspace functions, bindings                  |
+| =emacs/rb-setup.el=                             | Elisp: workspace functions (projectile), bindings     |
 | =emacs/rb-csharp.el=                            | Elisp: C# tree-sitter + eglot/csharp-ls integration  |
-| =emacs/rb-buffers.el=                           | Elisp: MRU buffer list side panel                     |
+| =emacs/rb-buffers.el=                           | Elisp: MRU buffer list + navigator toggle             |
+| =emacs/rb-diffs.el=                             | Elisp: git diff navigator panel                       |
 | =emacs/rb-org-todos.el=                         | Elisp: org-mode TODO keyword sequences                |
 | =~/Library/LaunchAgents/gnu.emacs.daemon.plist= | launchd: auto-start daemon on login                   |
 | =~/.emacs.d/post-init.el=                       | Emacs config: package declarations + load calls       |

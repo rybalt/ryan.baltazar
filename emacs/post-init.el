@@ -150,7 +150,11 @@
   ;; Disable wrapping of search around buffer
   (evil-search-wrap nil)
   ;; Whether Y yanks to the end of the line
-  (evil-want-Y-yank-to-eol t))
+  (evil-want-Y-yank-to-eol t)
+  :config
+  (put 'evil-shift-width 'safe-local-variable #'integerp)
+  ;; Free C-k in insert state for corfu popup navigation
+  (define-key evil-insert-state-map (kbd "C-k") nil))
 
 (use-package evil-collection
   :after evil
@@ -160,6 +164,12 @@
   (setq evil-collection-setup-minibuffer t)
   :config
   (evil-collection-init))
+
+(use-package evil-commentary
+  :after evil
+  :ensure t
+  :config
+  (evil-commentary-mode))
 
 (use-package avy
   :ensure t
@@ -269,12 +279,12 @@
         treemacs-tag-follow-cleanup              t
         treemacs-tag-follow-delay                1.5
         treemacs-text-scale                      nil
-        treemacs-user-mode-line-format           nil
-        treemacs-user-header-line-format         nil
+        treemacs-user-mode-line-format           'none
+        treemacs-user-header-line-format         (propertize " Files" 'face 'bold)
         treemacs-wide-toggle-width               70
         treemacs-width                           35
         treemacs-width-increment                 1
-        treemacs-width-is-initially-locked       t
+        treemacs-width-is-initially-locked       nil
         treemacs-workspace-switch-cleanup        nil)
 
   ;; The default width and height of the icons is 22 pixels.
@@ -321,13 +331,10 @@
 (use-package eat
   :ensure t)
 
-(use-package agent-shell
-  :ensure t
-  :bind ("C-c C-'" . agent-shell)
+(use-package monet
+  :vc (:url "https://github.com/stevemolitor/monet" :rev :newest)
   :config
-  (setq read-process-output-max (* 64 1024))
-  (evil-define-key 'insert agent-shell-mode-map (kbd "RET") #'newline)
-  (evil-define-key 'normal agent-shell-mode-map (kbd "RET") #'comint-send-input))
+  (monet-mode 1))
 
 (use-package doom-themes
   :ensure t
@@ -345,7 +352,7 @@
   :hook (after-init . doom-modeline-mode)
   :custom
   ;; Show
-  (doom-modeline-buffer-file-name-style 'truncate-upto-project)
+  (doom-modeline-buffer-file-name-style 'auto)
   (doom-modeline-modal t)
   (doom-modeline-modal-icon nil)
   (doom-modeline-modal-modern-icon nil)
@@ -402,7 +409,7 @@
 (use-package marginalia
   :hook (after-init . marginalia-mode))
 
-(scroll-bar-mode 1)
+(scroll-bar-mode -1)
 
 (use-package indent-bars
   :ensure t
@@ -434,6 +441,32 @@
   :ensure t
   :after (embark consult))
 
+;; In-buffer completion popup (corfu) + extra completion sources (cape)
+(use-package corfu
+  :ensure t
+  :init
+  (global-corfu-mode)
+  (corfu-history-mode)
+  (corfu-popupinfo-mode)
+  :custom
+  (corfu-auto t)
+  (corfu-auto-delay 0.25)
+  (corfu-auto-prefix 2)
+  (corfu-separator ?\s)
+  (corfu-quit-at-boundary 'separator)
+  (corfu-quit-no-match 'separator)
+  (corfu-popupinfo-delay '(0.5 . 0.2))
+  :bind (:map corfu-map
+              ("M-SPC" . corfu-insert-separator)
+              ("C-j"   . corfu-next)
+              ("C-k"   . corfu-previous)))
+
+(use-package cape
+  :ensure t
+  :init
+  (add-hook 'completion-at-point-functions #'cape-dabbrev)
+  (add-hook 'completion-at-point-functions #'cape-file))
+
 (use-package project
   :ensure nil
   :commands (project-find-file project-switch-project)
@@ -443,12 +476,34 @@
           (project-find-regexp "Grep" ?g)
           (project-shell "Shell" ?s))))
 
+;; Projectile — used for workspace root detection only.
+;; File finding and grepping stay on consult-fd / consult-ripgrep.
+(use-package projectile
+  :ensure t
+  :demand t
+  :config
+  (setq projectile-completion-system 'default)
+  (define-key projectile-mode-map (kbd "C-c p") nil)
+  (projectile-mode +1))
+
 ;; Keep ediff in the same frame (no new frame for control panel)
 (use-package ediff
   :ensure nil
   :custom
   (ediff-window-setup-function 'ediff-setup-windows-plain)
-  (ediff-split-window-function 'split-window-horizontally))
+  (ediff-split-window-function 'split-window-horizontally)
+  (ediff-highlight-all-diffs t)
+  :config
+  (add-hook 'ediff-prepare-buffer-hook
+            (lambda ()
+              (turn-on-font-lock)
+              (font-lock-ensure)))
+  ;; Color-code inactive diff regions: A = removed (red), B = added (green)
+  (custom-set-faces
+   '(ediff-even-diff-A ((t (:background "#3d2a2a"))))
+   '(ediff-even-diff-B ((t (:background "#2a3d2a"))))
+   '(ediff-odd-diff-A  ((t (:background "#3d2a2a"))))
+   '(ediff-odd-diff-B  ((t (:background "#2a3d2a"))))))
 
 ;; Git interface
 (use-package magit
@@ -467,6 +522,38 @@
 (use-package magit-delta
   :ensure t
   :hook (magit-mode . magit-delta-mode))
+
+(use-package vdiff
+  :ensure t
+  :custom
+  (vdiff-auto-refine t)
+  :config
+  (add-hook 'vdiff-mode-hook
+            (lambda ()
+              (turn-on-font-lock)
+              (font-lock-ensure)))
+  ;; Subtle tints so syntax highlighting remains readable
+  (custom-set-faces
+   '(vdiff-addition-face    ((t (:background "#2a3d2a"))))
+   '(vdiff-subtraction-face ((t (:background "#3d2a2a"))))
+   '(vdiff-change-face      ((t (:background "#332a3d"))))
+   '(vdiff-refine-added     ((t (:background "#335533"))))
+   '(vdiff-refine-changed   ((t (:background "#3d3355"))))))
+
+(use-package vdiff-magit
+  :ensure t
+  :after magit
+  :init
+  ;; Shim for magit-get-revision-buffer, removed in magit 4.x.
+  ;; It was a cache lookup; nil forces the fallback to magit-find-file-noselect.
+  (unless (fboundp 'magit-get-revision-buffer)
+    (defun magit-get-revision-buffer (_rev _file) nil))
+  :bind (:map magit-mode-map
+              ("e" . vdiff-magit-dwim)
+              ("E" . vdiff-magit-dwim))
+  :config
+  (transient-suffix-put 'magit-dispatch "e" :description "vdiff (dwim)")
+  (transient-suffix-put 'magit-dispatch "e" :command 'vdiff-magit-dwim))
 
 ;; Git change indicators in the fringe
 (use-package diff-hl
@@ -499,5 +586,11 @@
 ;; MRU buffer list panel (toggle with SPC t t alongside treemacs)
 (load (expand-file-name "rb-buffers" rb-emacs-dir) nil t)
 
+;; Git diff navigator panel (toggle with SPC t t alongside treemacs)
+(load (expand-file-name "rb-diffs" rb-emacs-dir) nil t)
+
 ;; Org-mode TODO keyword sequences (design questions, etc.)
 (load (expand-file-name "rb-org-todos" rb-emacs-dir) nil t)
+
+;; Prose prettification (serif fonts, olivetti, org-modern, scaled headings)
+(load (expand-file-name "rb-prose" rb-emacs-dir) nil t)

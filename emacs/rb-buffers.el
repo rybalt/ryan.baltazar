@@ -12,14 +12,24 @@
 (declare-function treemacs "treemacs")
 (declare-function evil-set-initial-state "evil-core")
 (declare-function evil-define-key "evil-core")
+(declare-function rb-diffs--show "rb-diffs")
+(declare-function rb-diffs--hide "rb-diffs")
+(declare-function rb-diffs--setup-hooks "rb-diffs")
+(declare-function rb-diffs--teardown-hooks "rb-diffs")
+(declare-function rb-workspace-root "rb-setup")
+(declare-function treemacs-do-add-project-to-workspace "treemacs-workspaces")
+(declare-function treemacs-do-remove-project-from-workspace "treemacs-workspaces")
+(declare-function treemacs-current-workspace "treemacs-workspaces")
+(declare-function treemacs-workspace->projects "treemacs-workspaces")
+(declare-function treemacs-project->path "treemacs-workspaces")
 
 ;; ── Constants ─────────────────────────────────────────────────────────────────
 
 (defconst rb-buffers--buffer-name "*rb-buffers*"
   "Name of the MRU buffer list panel buffer.")
 
-(defconst rb-buffers--side-slot -2
-  "Side window slot.  Treemacs uses -1/0; -2 sits above it.")
+(defconst rb-buffers--side-slot -3
+  "Side window slot.  Treemacs uses -1/0; -3 sits at the top.")
 
 (defconst rb-buffers--window-height 0.20
   "Height of the buffer panel as a fraction of frame height.")
@@ -158,7 +168,7 @@ append <parent-dir> to each."
   (setq-local buffer-read-only t
               truncate-lines t
               cursor-type nil
-              mode-line-format nil
+              mode-line-format " "
               header-line-format
               (propertize " Buffers" 'face 'bold)))
 
@@ -192,8 +202,7 @@ append <parent-dir> to each."
        . ((side          . left)
           (slot          . ,rb-buffers--side-slot)
           (window-height . ,rb-buffers--window-height)
-          (dedicated     . t)
-          (preserve-size . (t . nil)))))))
+          (dedicated     . t))))))
 
 (defun rb-buffers--hide ()
   "Remove the buffer panel window if visible."
@@ -227,19 +236,37 @@ append <parent-dir> to each."
 
 ;; ── Toggle command ────────────────────────────────────────────────────────────
 
+(defun rb-toggle-navigator--ensure-treemacs-root ()
+  "Add the workspace root to treemacs, removing redundant sub-projects.
+Projects whose path is a subdirectory of the workspace root are removed
+to avoid clutter."
+  (let* ((root (file-name-as-directory (rb-workspace-root)))
+         (name (file-name-nondirectory (directory-file-name root))))
+    (treemacs-do-add-project-to-workspace root name)
+    (dolist (proj (treemacs-workspace->projects (treemacs-current-workspace)))
+      (let ((path (file-name-as-directory (treemacs-project->path proj))))
+        (when (and (string-prefix-p root path)
+                   (not (string= root path)))
+          (treemacs-do-remove-project-from-workspace proj))))))
+
 (defun rb-toggle-navigator ()
   "Toggle the treemacs + MRU buffer panel navigator."
   (interactive)
   (require 'treemacs)
   (pcase (treemacs-current-visibility)
     ('visible
+     (rb-diffs--hide)
+     (rb-diffs--teardown-hooks)
      (rb-buffers--hide)
      (rb-buffers--teardown-hooks)
      (delete-window (treemacs-get-local-window)))
     (_
      (treemacs)
+     (rb-toggle-navigator--ensure-treemacs-root)
      (rb-buffers--show)
-     (rb-buffers--setup-hooks))))
+     (rb-buffers--setup-hooks)
+     (rb-diffs--show)
+     (rb-diffs--setup-hooks))))
 
 ;; ── Leader key ────────────────────────────────────────────────────────────────
 

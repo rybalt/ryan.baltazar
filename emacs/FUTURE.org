@@ -19,6 +19,18 @@ Plugins and features to consider adding. Not currently needed, but worth revisit
 | =cmake-mode=    | CMake file syntax highlighting               | If C++ projects use CMake             |
 | =clang-format=  | Auto-format C++ on save via =clang-format=   | If team uses clang-format             |
 
+* Navigator / Treemacs
+
+** TODO Treemacs follows symlinks into separate projects
+
+When the umbrella workspace contains symlinked directories (e.g. =docs/= → an external path), treemacs or =rb-toggle-navigator--ensure-treemacs-root= may add the symlink target as a separate project, or fail to prune it as a sub-project because the resolved path doesn't have the workspace root as a prefix.  Needs investigation into whether =treemacs-project->path= returns the symlink or the resolved target, and whether =file-truename= normalization is needed in the pruning logic.
+
+* Completion
+
+| Feature              | Purpose                                                        | When to add                                       |
+|----------------------+----------------------------------------------------------------+---------------------------------------------------|
+| =cape-capf-super=    | Merge multiple completion sources (e.g. eglot + dabbrev) into one popup | If you want LSP and buffer-word completions mixed |
+
 * General
 
 | Plugin              | Purpose                                               | When to add                                    |
