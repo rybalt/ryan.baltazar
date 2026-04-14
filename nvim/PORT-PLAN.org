@@ -1,0 +1,558 @@
+#+TITLE: Rybalt Neovim Setup & Port Plan
+#+AUTHOR: Ryan Baltazar
+
+* Overview
+
+Migration target: Neovim (via Neovide GUI on macOS, LazyVim bootstrap) as
+the "text editor" slot in a multi-tool workflow. Rider stays for serious
+Unity C#/C++ engineering. Emacs remains installed as a fallback while
+this migration stabilizes, and for org-mode (which has no real Neovim
+equivalent).
+
+*Primary workflow to preserve:* inline comments in prettified markdown
+as agent instructions. Requires readable-grade markdown rendering
+(variable-pitch prose, distinct code blocks, centered reading column)
+and the ability to easily find markdown files that live in gitignored
+=.claude/= dirs across a multi-repo umbrella workspace.
+
+* Chosen stack
+
+| Component          | Choice                        | Notes                                                      |
+|--------------------+-------------------------------+------------------------------------------------------------|
+| Bootstrap          | LazyVim                       | folke's plugin spec ecosystem; =<leader>= is =SPC=         |
+| GUI                | Neovide                       | Per-highlight-group fonts enable variable-pitch prose      |
+| Theme              | monokai-pro.nvim              | Port of doom-monokai-pro from Emacs                        |
+| Code font          | FiraMono Nerd Font            | Kept from Emacs config                                     |
+| Prose font         | iA Writer Quattro             | Variable-pitch serif; installed via Homebrew               |
+| Git UI             | Neogit                        | Magit-shaped; starting here, Lazygit TBD if needed         |
+| GitHub links       | gitlinker.nvim                | Replaces =rb-github-link.el=                               |
+| Markdown rendering | render-markdown.nvim          | Inline rendering, un-renders on cursor entry               |
+| Centered column    | no-neck-pain.nvim             | Replaces =olivetti-mode=                                   |
+| Claude Code IDE    | coder/claudecode.nvim         | WebSocket IDE protocol; Claude Code stays in iTerm2 hotkey |
+| Picker             | LazyVim default (snacks.nvim) | Configured for top-center float                            |
+| C# LSP             | *deferred as TODO*            | Rider is the primary C# tool                               |
+
+* Prerequisites
+
+** Homebrew packages
+
+#+begin_src shell
+# Core
+brew install --cask neovide
+brew install neovim          # LazyVim requires 0.10+; Homebrew is 0.10+
+brew install fd ripgrep      # file finder + grep, used by picker
+brew install git-delta       # optional, syntax-highlighted diffs
+
+# Fonts
+brew install font-fira-mono-nerd-font
+brew install font-ia-writer-quattro
+#+end_src
+
+** Nerd Font glyphs
+
+After fonts are installed, Neovide/Neovim picks them up automatically
+on next launch. No =M-x nerd-icons-install-fonts= equivalent needed;
+Neovim icon plugins (=mini.icons=, =nvim-web-devicons=) embed glyph
+tables directly.
+
+* LazyVim bootstrap
+
+Follow the official starter:
+
+#+begin_src shell
+# Back up any existing nvim config first if present
+mv ~/.config/nvim{,.bak} 2>/dev/null
+mv ~/.local/share/nvim{,.bak} 2>/dev/null
+mv ~/.local/state/nvim{,.bak} 2>/dev/null
+mv ~/.cache/nvim{,.bak} 2>/dev/null
+
+# Clone starter
+git clone https://github.com/LazyVim/starter ~/.config/nvim
+rm -rf ~/.config/nvim/.git
+
+# First launch — installs plugins and lazy.nvim
+nvim
+#+end_src
+
+First-launch verification: =SPC= shows the which-key popup with
+LazyVim's default bindings. =<leader>ff= opens a file picker.
+=:checkhealth= reports no errors.
+
+* Per-umbrella setup
+
+Each umbrella workspace (e.g. =A_Feature_In_Development/=) needs two
+marker files at its root:
+
+** =.projectile= (empty marker file)
+
+Reused from Emacs. Defines the umbrella boundary for workspace-scoped
+commands. Kept as =.projectile= (rather than introducing a new marker)
+so existing umbrellas Just Work, and so Emacs fallback still recognizes
+the workspace.
+
+** =.fdignore=
+
+Controls what fd finds under =SPC w f= (workspace fuzzy-find).
+Overrides sub-repo =.gitignore= where needed.
+
+#+begin_src gitignore
+# Unity noise — catches test projects that aren't git-tracked
+Library/
+Temp/
+obj/
+Build/
+Builds/
+Logs/
+UserSettings/
+*.csproj
+*.sln
+
+# Marker/config files that are noise in the picker
+.projectile
+.fdignore
+
+# Re-include gitignored-but-useful (.claude dirs hold agent markdown)
+!.claude/
+!.claude/**
+#+end_src
+
+The =!.claude/= pair overrides a sub-repo =.gitignore= that excludes
+=.claude/=, so markdown agent instructions surface in =SPC w f=.
+Verified empirically; see the fd-design memory for details.
+
+A =:WorkspaceInit= Lua command (below) creates both files.
+
+* Configuration files
+
+LazyVim layout: user config lives under =~/.config/nvim/lua/=:
+
+#+begin_src
+~/.config/nvim/
+├── init.lua
+├── lua/
+│   ├── config/
+│   │   ├── lazy.lua          # (LazyVim-managed)
+│   │   ├── options.lua       # vim.opt overrides
+│   │   ├── keymaps.lua       # leader bindings
+│   │   └── autocmds.lua      # rb-prose-mode equivalent
+│   ├── plugins/
+│   │   ├── colorscheme.lua   # monokai-pro
+│   │   ├── markdown.lua      # render-markdown + no-neck-pain
+│   │   ├── claude.lua        # claudecode.nvim
+│   │   ├── git.lua           # Neogit + gitlinker
+│   │   ├── picker.lua        # picker layout override
+│   │   └── prose.lua         # variable-pitch highlight overrides
+│   └── rb/
+│       ├── workspace.lua     # root detection + SPC w bindings
+│       ├── multi-repo.lua    # rb-magit-status Neogit equivalent
+│       └── changed-files.lua # rb-changed-files equivalent
+└── ginit.vim or init-gui.lua # Neovide-specific font/cursor config
+#+end_src
+
+** =options.lua= — core editor behavior
+
+#+begin_src lua
+-- Keep CWD stable so workspace root detection works reliably
+vim.opt.autochdir = false
+
+-- Evil-like behaviors that are Neovim defaults but worth pinning:
+vim.opt.wrapscan = false          -- evil-search-wrap nil
+vim.opt.virtualedit = "block"     -- evil-move-beyond-eol in visual block
+
+-- Preferences carried from Emacs:
+vim.opt.relativenumber = true     -- display-line-numbers-mode in prog
+vim.opt.number = true
+vim.opt.scrolloff = 5
+vim.opt.splitbelow = true         -- evil-split-window-below
+vim.opt.splitright = true         -- evil-vsplit-window-right
+vim.opt.linebreak = true          -- wrap on word boundaries (prose)
+#+end_src
+
+** Keybindings (=keymaps.lua=)
+
+See the keybindings section below for the full table. Implementation
+imports the custom modules under =lua/rb/=.
+
+* Keybindings
+
+All leader bindings. LazyVim provides the defaults marked [L]; custom
+bindings added on top.
+
+** Workspace (umbrella-scoped, =SPC w=)
+
+| Binding   | Command                  | Description                                       |
+|-----------+--------------------------+---------------------------------------------------|
+| =SPC w f= | =rb.workspace.find_file= | fd across umbrella; respects .gitignore+.fdignore |
+| =SPC w F= | =rb.workspace.find_all=  | fd with =--no-ignore=; escape valve               |
+| =SPC w g= | =rb.workspace.grep=      | ripgrep across umbrella                           |
+| =SPC w w= | =rb.workspace.init=      | Create .projectile + .fdignore at chosen dir      |
+
+Conflicts with LazyVim's =<leader>w= window-management prefix. Resolve
+by moving LazyVim's window prefix to =<leader>W= in =keymaps.lua=.
+
+** Repo (git-root-scoped, LazyVim defaults)
+
+| Binding   | Command             | Description                     |
+|-----------+---------------------+---------------------------------|
+| =SPC f f= | =picker.files= [L]  | Find file in git root           |
+| =SPC s g= | =picker.grep=  [L]  | Grep in git root                |
+| =SPC f r= | =picker.recent=[L]  | Recent files (LazyVim's SPC r)  |
+
+** Git (=SPC g=)
+
+| Binding   | Command                   | Description                              |
+|-----------+---------------------------+------------------------------------------|
+| =SPC g g= | =rb.multi_repo.neogit=    | Pick repo under umbrella, open Neogit    |
+| =SPC g d= | =rb.changed_files=        | Staged/unstaged/untracked picker         |
+| =SPC g l= | =Neogit log=              | Log for current branch                   |
+| =SPC g y= | =gitlinker.get_buf_range= | Copy GitHub permalink                    |
+| =]h=  [L] | =Gitsigns next_hunk=      | Next hunk (replaces =]c= in Emacs)       |
+| =[h=  [L] | =Gitsigns prev_hunk=      | Previous hunk                            |
+
+** Jump (flash.nvim, =s=)
+
+| Binding | Description                                          |
+|---------+------------------------------------------------------|
+| =s=     | flash.nvim jump (replaces all =SPC SPC= avy bindings) |
+| =S=     | flash treesitter                                     |
+
+flash is more ergonomic than evil-avy; =SPC SPC= bindings retired.
+
+** Buffer / Line
+
+| Binding   | Command         | Description                  |
+|-----------+-----------------+------------------------------|
+| =SPC b b= | =picker.buffers= [L] | Switch buffer                |
+| =SPC s b= | =picker.lines=   [L] | Search lines in buffer       |
+
+** Diff navigation
+
+| Binding   | Command                 | Description                        |
+|-----------+-------------------------+------------------------------------|
+| =<C-w>d=  | =diffview.open=         | Open diffview (replaces ediff)     |
+
+* Custom Lua modules
+
+Ported from Emacs, preserving behavior. Each is a small self-contained
+file; none depend on each other.
+
+** =lua/rb/workspace.lua= — root detection and file-finding
+
+Walks up from Neovim's CWD (not buffer realpath) looking for
+=.projectile= marker; falls back to nearest =.git=; falls back to cwd.
+The cwd-based approach is symlink-proof: opening a file through the
+=docs/= symlink keeps the umbrella as workspace, even though the file's
+realpath is outside the umbrella.
+
+#+begin_src lua
+local M = {}
+
+local function find_marker(start, marker)
+  local dir = start
+  while dir ~= "/" do
+    if vim.uv.fs_stat(dir .. "/" .. marker) then return dir end
+    dir = vim.fn.fnamemodify(dir, ":h")
+  end
+  return nil
+end
+
+function M.workspace_root()
+  local cwd = vim.fn.getcwd()
+  return find_marker(cwd, ".projectile")
+      or find_marker(cwd, ".git")
+      or cwd
+end
+
+function M.repo_root()
+  local buf_dir = vim.fn.expand("%:p:h")  -- symlink-preserving
+  return find_marker(buf_dir, ".git") or M.workspace_root()
+end
+
+-- fd flag sets
+local FD_WORKSPACE = { "--type", "file", "--hidden", "--follow",
+                       "--exclude", ".git" }
+local FD_ALL       = { "--type", "file", "--hidden", "--follow",
+                       "--no-ignore", "--exclude", ".git" }
+
+function M.find_file()
+  require("snacks.picker").files({
+    cwd = M.workspace_root(),
+    cmd = "fd",
+    args = FD_WORKSPACE,
+  })
+end
+
+function M.find_all()
+  require("snacks.picker").files({
+    cwd = M.workspace_root(),
+    cmd = "fd",
+    args = FD_ALL,
+  })
+end
+
+function M.grep()
+  require("snacks.picker").grep({ cwd = M.workspace_root() })
+end
+
+function M.init(dir)
+  dir = dir or vim.fn.input("Workspace root: ", vim.fn.getcwd(), "dir")
+  if dir == "" then return end
+  dir = vim.fn.fnamemodify(dir, ":p"):gsub("/$", "")
+  local projectile = dir .. "/.projectile"
+  local fdignore   = dir .. "/.fdignore"
+  if not vim.uv.fs_stat(projectile) then
+    vim.fn.writefile({}, projectile)
+  end
+  if not vim.uv.fs_stat(fdignore) then
+    vim.fn.writefile({
+      "# Unity noise",
+      "Library/", "Temp/", "obj/", "Build/", "Builds/",
+      "Logs/", "UserSettings/",
+      "*.csproj", "*.sln",
+      "",
+      "# Marker/config files",
+      ".projectile", ".fdignore",
+      "",
+      "# Re-include gitignored-but-useful",
+      "!.claude/", "!.claude/**",
+    }, fdignore)
+  end
+  vim.cmd.cd(dir)
+  vim.notify("Workspace: " .. dir)
+end
+
+return M
+#+end_src
+
+** =lua/rb/multi-repo.lua= — pick-a-repo Neogit launcher
+
+Replaces =rb-magit-status= (=SPC g g=). Discovers git repos immediately
+under the workspace root, presents an MRU-sorted picker, opens Neogit
+on the selection.
+
+** =lua/rb/changed-files.lua= — staged/unstaged/untracked picker
+
+Replaces =rb-changed-files= (=SPC g d=). A picker sourced from
+=git diff --name-only --cached= + =git diff --name-only= +
+=git ls-files --others --exclude-standard=, with a column of
+=+X -Y= numstat annotations.
+
+* Prose prettification
+
+Replaces =rb-prose-mode= (olivetti + mixed-pitch + org-modern glyphs +
+visual-line-mode). The Neovim equivalent stacks:
+
+- =render-markdown.nvim= — heading glyphs/sizes, code block backgrounds,
+  list bullets, checkboxes (un-renders on cursor entry for editing)
+- =no-neck-pain.nvim= — centered column (olivetti replacement)
+- Neovide per-highlight-group =guifont= — variable-pitch prose, fixed-pitch code
+
+** Neovide config (=init-gui.lua= or =ginit.vim=)
+
+#+begin_src lua
+if vim.g.neovide then
+  vim.opt.guifont = "FiraMono Nerd Font:h14"
+  vim.g.neovide_padding_top    = 12
+  vim.g.neovide_padding_bottom = 12
+  vim.g.neovide_padding_left   = 12
+  vim.g.neovide_padding_right  = 12
+  vim.g.neovide_cursor_animation_length = 0.05
+  vim.g.neovide_cursor_trail_size       = 0.2
+  vim.g.neovide_scroll_animation_length = 0.1
+end
+#+end_src
+
+** Variable-pitch prose highlight overrides
+
+Neovide supports per-highlight-group font overrides. Apply iA Writer
+Quattro to prose faces; keep FiraMono on code:
+
+#+begin_src lua
+-- Markdown-mode autocmd: activate prose treatment
+vim.api.nvim_create_autocmd("FileType", {
+  pattern = { "markdown", "text" },
+  callback = function()
+    vim.opt_local.wrap = true
+    vim.opt_local.linebreak = true
+    vim.opt_local.breakindent = true
+    vim.cmd("NoNeckPain")
+
+    -- Scale headings; apply iA Writer Quattro to prose
+    local prose_font = "iA Writer Quattro S:h14"
+    for _, group in ipairs({
+      "RenderMarkdownH1", "RenderMarkdownH2", "RenderMarkdownH3",
+      "RenderMarkdownH4", "@markup.heading",
+      "Normal", "@text", "@markup",
+    }) do
+      vim.api.nvim_set_hl(0, group, { font = prose_font })
+    end
+    -- Keep code blocks in mono
+    vim.api.nvim_set_hl(0, "@markup.raw", { font = "FiraMono Nerd Font:h14" })
+    vim.api.nvim_set_hl(0, "@markup.raw.block", { font = "FiraMono Nerd Font:h14" })
+  end,
+})
+#+end_src
+
+* Incremental port plan
+
+Work through these phases in order. Do not proceed to the next until
+the current is verified.
+
+** Phase 1: First launch and core editor feel
+*** Sign-off
+- [ ] Neovide launches, LazyVim installs without errors
+- [ ] =:checkhealth= clean
+- [ ] Default theme readable, modal indicator visible
+- [ ] =SPC f f= opens a file picker, =s= triggers flash jump
+- [ ] User sign-off
+
+** Phase 2: Theme and fonts
+*** Sign-off
+- [ ] monokai-pro.nvim applied, matches Emacs =doom-monokai-pro= feel
+- [ ] FiraMono Nerd Font rendering correctly with icons
+- [ ] Picker renders as top-center float
+- [ ] User sign-off
+
+** Phase 3: Markdown prettification workflow
+
+The highest-priority workflow per the migration's primary goal (inline
+comments in prettified markdown as agent instructions). Land this before
+anything else that isn't pure bootstrapping, because the whole point of
+the migration is to preserve this workflow.
+
+*** Sign-off
+- [ ] render-markdown.nvim rendering headings/lists/code blocks
+- [ ] no-neck-pain.nvim centers column
+- [ ] iA Writer Quattro applied to prose, FiraMono to code blocks
+- [ ] Cursor entry into a rendered line reveals the raw markdown (for editing)
+- [ ] User sign-off
+
+** Phase 4: Workspace root detection and file-finding
+
+Neovim's CWD concept makes this noticeably less painful than the Emacs
+equivalent. In Emacs, =default-directory= follows the current buffer,
+which means "workspace root" has to be recomputed for every buffer and
+tends to drift unpredictably (especially through symlinks). In Neovim,
+CWD is process-wide and stable; setting =noautochdir= pins it at launch
+and root detection becomes a one-shot walk from CWD. If LazyVim's
+default picker scoping (git root) is close enough, this phase might be
+reduced to just wiring =SPC w f= / =SPC w F= overrides for the
+umbrella-wide case.
+
+*** Sign-off
+- [ ] =lua/rb/workspace.lua= installed
+- [ ] =:WorkspaceInit /opt/UnitySrc/repos/rybalt= (or an existing umbrella)
+  creates =.projectile= and =.fdignore=
+- [ ] =SPC w f= finds =docs/planning/=*.md files through the symlink
+- [ ] =SPC w f= finds =.claude/=*.md files (gitignored)
+- [ ] =SPC w f= does NOT surface =Library/=, =Temp/=, =build/= from
+  a Unity test project
+- [ ] =SPC w F= surfaces everything (build artifacts etc.)
+- [ ] User sign-off
+
+** Phase 5: Claude Code integration
+*** Sign-off
+- [ ] claudecode.nvim installed, WebSocket server starts on Neovide launch
+- [ ] =/ide= in iTerm2 Claude Code session discovers Neovide
+- [ ] A Claude Code edit renders as a diff buffer in Neovide
+- [ ] Hunk-level accept/reject keybindings work
+- [ ] User sign-off
+
+** Phase 6: Git (Neogit + gitlinker + gitsigns)
+*** Sign-off
+- [ ] Neogit opens on =SPC g g= via =rb.multi_repo= picker
+- [ ] =SPC g d= shows staged/unstaged/untracked picker with numstat
+- [ ] =SPC g y= copies a GitHub permalink for the current line
+- [ ] =]h= / =[h= navigate hunks in a modified file
+- [ ] User sign-off
+
+** Phase 7: Nice-to-haves
+*** Sign-off
+- [ ] rainbow-delimiters for lisp/treesitter brackets
+- [ ] indent guides (snacks.indent or indent-blankline)
+- [ ] diffview.nvim for multi-file diff review (ediff replacement)
+- [ ] bufferline at top
+- [ ] User sign-off
+
+* Deferred / TODO
+
+** C# LSP (omnisharp or csharp-ls)
+
+Rider remains the primary C# tool. Syntax highlighting only in Neovim
+is sufficient for quick edits. If this becomes painful (e.g. reading
+Unity package code frequently in Neovim), enable LazyVim's C# extra
+or port =rb-csharp.el='s =.sln= resolution logic to Lua.
+
+** C++ LSP (clangd)
+
+Not yet evaluated. NativePlugin~ work may benefit, but Rider also
+handles this. Revisit after phase 7.
+
+** Lazygit as a second git UI
+
+Phase 6 starts with Neogit only. If Neogit's UX is missing something,
+install =kdheepak/lazygit.nvim= and bind to =SPC g G=. No rush.
+
+* Reference: feature mapping from Emacs config
+
+Full audit of what ports where. "Skip" means intentionally not ported.
+
+** Ported directly (clean 1:1)
+
+| Emacs                              | Neovim                                        |
+|------------------------------------+-----------------------------------------------|
+| evil + evil-collection             | native Neovim                                 |
+| evil-commentary                    | LazyVim default (mini.comment)                |
+| evil-leader (SPC)                  | LazyVim's leader                              |
+| which-key                          | which-key.nvim (LazyVim default)              |
+| vertico/consult/orderless          | snacks.picker (LazyVim default)               |
+| corfu + cape                       | blink.cmp (LazyVim default)                   |
+| avy (=SPC SPC=)                    | flash.nvim =s= / =S=                          |
+| goto-chg (=g;=/=g,=)               | native Neovim                                 |
+| diff-hl + =]c=/=[c=                | gitsigns.nvim + =]h=/=[h=                     |
+| indent-bars                        | snacks.indent or indent-blankline.nvim        |
+| editorconfig                       | editorconfig.nvim (built-in since 0.9)        |
+| autorevert / savehist / saveplace  | built-in shada + =autoread=                   |
+| recentf                            | snacks.picker recent + =v:oldfiles=           |
+| markdown-mode                      | LazyVim markdown extra + render-markdown.nvim |
+| monet (Claude IDE)                 | coder/claudecode.nvim                         |
+| pixel-scroll-precision-mode        | Neovide native                                |
+| rainbow-delimiters                 | rainbow-delimiters.nvim                       |
+
+** Reimagined (different shape)
+
+| Emacs                           | Neovim                                              |
+|---------------------------------+-----------------------------------------------------|
+| treemacs sidebar                | snacks.explorer (LazyVim default) or neo-tree.nvim  |
+| magit                           | Neogit (Lazygit as fallback if Neogit falls short)  |
+| rb-prose-mode stack             | render-markdown + no-neck-pain + Neovide per-hl fonts |
+| doom-modeline                   | lualine.nvim (LazyVim default)                      |
+| doom-monokai-pro                | monokai-pro.nvim                                    |
+| vertico-posframe top-center     | snacks.picker layout override                       |
+| ediff/vdiff + custom colors     | diffview.nvim (defaults)                            |
+| rb-setup SPC w / SPC r          | =lua/rb/workspace.lua= + LazyVim SPC f defaults     |
+| rb-magit-status (multi-repo)    | =lua/rb/multi-repo.lua= wrapping Neogit             |
+| rb-changed-files                | =lua/rb/changed-files.lua= using snacks picker      |
+| rb-github-link                  | gitlinker.nvim                                      |
+
+** Skipped (decided not to port)
+
+| Emacs feature                 | Reason                                              |
+|-------------------------------+-----------------------------------------------------|
+| rb-buffers.el (MRU sidebar)   | Picker + bufferline covers it                       |
+| rb-diffs.el (multi-repo diff) | claudecode.nvim diffs + gitsigns cover the use case |
+| rb-csharp.el                  | Deferred as TODO (see above)                        |
+| rb-org-todos.el (DQ_)         | Org stays in Emacs                                  |
+| eat terminal                  | No in-editor terminal (per handoff)                 |
+| nyan-mode                     | Disabled in Emacs config anyway                     |
+| vim-tab-bar                   | Emacs-only workaround                               |
+| SPC c c (→ C-c C-c)           | Emacs-ism; no Neovim analogue needed                |
+| exec-path-from-shell          | Launch Neovide from login shell                     |
+
+** Stays in Emacs
+
+- Org-mode and all org-specific packages (=org-modern=, =org-appear=,
+  =org-indent-mode=, =rb-org-todos= DQ_ sequences)
+- Magit for advanced operations if Neogit falls short
+- The entire =/opt/UnitySrc/repos/rybalt/emacs/= config, unchanged,
+  as a fallback during migration
