@@ -5,9 +5,18 @@
 -- Keep CWD stable so workspace-root detection works reliably (see rb/workspace.lua)
 vim.opt.autochdir = false
 
+-- Use the system clipboard as the default register. Plain y/p/d/c etc.
+-- now exchange with the OS clipboard (no need for "+y or "+p prefixes).
+-- LazyVim also sets this by default; re-pinning here for clarity.
+vim.opt.clipboard = "unnamedplus"
+
 -- Neovide (GUI) configuration
 if vim.g.neovide then
   vim.opt.guifont = "FiraMono Nerd Font:h14"
+
+  -- Enable Cmd as the <D-...> ("logo") modifier so macOS-native shortcuts
+  -- (Cmd+V, Cmd+C, Cmd+S) can be mapped. Bindings live in keymaps.lua.
+  vim.g.neovide_input_use_logo = 1
 
   vim.g.neovide_padding_top    = 12
   vim.g.neovide_padding_bottom = 12

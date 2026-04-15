@@ -12,21 +12,27 @@
 
 ## File Formats
 
-- Documents intended for local reading (research plans, notes, design docs) should be written in Emacs org-mode format (`.org`), not Markdown. The user reads these files in Emacs where org-mode provides folding, TODO integration, and executable code blocks.
-- Documents shared externally (GitHub READMEs, CI docs, files read by other tools or people) should remain Markdown.
+- All local documents (research plans, notes, design docs) and shared documents (READMEs, CI docs) should be written in Markdown.
 
-## Org-mode Design Question Format
+## Design Question Tracking
 
-When tracking design questions in org-mode research documents, use the `DQ_` TODO keyword sequence. States, structure rules, property drawer conventions, and examples are defined in `~/.config/rybalt/emacs/rb-org-todos.el` — read that file for the full specification.
+When tracking design questions in research/planning documents, use markdown headings with status tags:
 
-## Org-mode Source File References
+```markdown
+### DQ: How should we handle X? `OPEN`
+### DQ: Should we use approach A or B? `RESOLVED`
+```
 
-When referencing source files in org-mode documents, use org file links instead of inline code markup:
+Status tags: `OPEN`, `INVESTIGATING`, `RESOLVED`, `WONTFIX`. Place the tag at the end of the heading in backticks.
 
-- Use `[[file:relative/path/to/file.cs][DisplayName.cs]]` for file links. Paths should be relative to the org document.
-- For line-specific references, use `[[file:path/to/file.cs::42][File.cs:42]]` — the `::linenum` syntax opens the file at that line in Emacs.
+## Source File References
+
+When referencing source files in documents, use standard markdown:
+
+- Use `[DisplayName.cs](relative/path/to/file.cs)` for file links. Paths should be relative to the document.
+- For line-specific references, use inline code: `file.cs:42`.
 - Verify line numbers against the actual source before writing them. Stale line numbers are worse than no line numbers.
-- When referencing files from a read-only or prototype branch, annotate the link: `[[file:path][File.cs]] (prototype branch)`.
+- When referencing files from a read-only or prototype branch, annotate: `[File.cs](path) (prototype branch)`.
 
 ## Diff Stack Workflow
 
@@ -43,10 +49,10 @@ Per-diff cycle:
 5. Fix test failures
 6. Show diff for user sign-off — **do not proceed to next diff without explicit approval**
 
-### Sign-off Checklists in Plan Org Files
+### Sign-off Checklists in Plan Files
 
-Each diff in a plan org file includes a `*** Sign-off` section with an org
-checklist mirroring the acceptance criteria. Items are checked (`[X]`) as they
+Each diff in a plan file includes a `### Sign-off` section with a markdown
+checklist mirroring the acceptance criteria. Items are checked (`[x]`) as they
 are verified. The **last item** in every sign-off checklist is always:
 
 ```

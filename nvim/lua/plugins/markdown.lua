@@ -8,7 +8,7 @@ return {
     ft = { "markdown" },
     dependencies = {
       "nvim-treesitter/nvim-treesitter",
-      "echasnovski/mini.icons",
+      "nvim-mini/mini.icons",
     },
     opts = {
       -- Render in every mode EXCEPT insert. Entering insert reveals the

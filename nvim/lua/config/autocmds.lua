@@ -19,3 +19,6 @@ vim.api.nvim_create_autocmd("FileType", {
 -- font sizes, so org-style H1>H2>H3 scaling isn't achievable. Differentiation
 -- is via bold weight, icons, and per-level colors/backgrounds (see
 -- lua/plugins/markdown.lua render-markdown opts).
+
+-- Register custom rb.* modules.
+require("rb.homepage").setup()
