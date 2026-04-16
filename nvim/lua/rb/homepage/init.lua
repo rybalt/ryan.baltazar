@@ -1,4 +1,5 @@
--- rb.homepage — a minimal "start of day" dashboard showing my open GitHub PRs.
+-- rb.homepage — a minimal "start of day" dashboard showing my open GitHub PRs
+-- across every host authenticated via `gh auth`.
 --
 -- Demonstrates the fundamentals of writing a custom Neovim module:
 --   • how a Lua module's public API looks (returned table `M`)
@@ -7,6 +8,7 @@
 --   • buffer-local keymaps (<CR>, q, R)
 --   • shelling out to an external CLI (`gh`) via `vim.system`
 --   • parsing JSON into Lua tables
+--   • overriding a subprocess's environment to target multiple gh hosts
 --
 -- Triggered three ways:
 --   1. `:Homepage` command (registered via M.setup)
@@ -19,6 +21,38 @@
 
 local M = {}
 
+-- ── Host discovery ───────────────────────────────────────────────────────
+-- `gh auth status` prints something like:
+--     github.com
+--       ✓ Logged in to github.com account rybalt (keyring)
+--       ...
+--     github.enterprise.example.com
+--       ✓ Logged in to github.enterprise.example.com account rbaltazar (...)
+--       ...
+--
+-- No --json flag exists for this subcommand, so we parse the human output.
+-- We match `Logged in to <host>` lines and dedupe, preserving order.
+local function list_hosts()
+  local result = vim.system({ "gh", "auth", "status" }, { text = true }):wait()
+  if result.code ~= 0 then
+    local err = (result.stderr or "") .. (result.stdout or "")
+    return { "github.com" }, "gh auth status failed: " .. vim.trim(err)
+  end
+
+  local hosts, seen = {}, {}
+  for host in (result.stdout or ""):gmatch("Logged in to (%S+)") do
+    if not seen[host] then
+      seen[host] = true
+      table.insert(hosts, host)
+    end
+  end
+
+  if #hosts == 0 then
+    return { "github.com" }, "no authenticated hosts parsed from gh auth status"
+  end
+  return hosts, nil
+end
+
 -- ── Data fetching ────────────────────────────────────────────────────────
 -- Fields we ask gh to return per PR. Only the ones we render.
 -- (Full schema: `gh search prs --json`.)
@@ -28,10 +62,11 @@ local FIELDS = table.concat({
   "author", "labels", "createdAt", "updatedAt",
 }, ",")
 
--- Run one `gh search prs` invocation. query_args is a list of extra flags
--- like {"--author=@me"} appended to the base command.
+-- Run one `gh search prs` invocation against a specific host.
+-- query_args is a list of extra flags like {"--author=@me"}.
+-- host sets GH_HOST for the subprocess so gh targets the right GitHub.
 -- Returns parsed Lua table, or nil + error message.
-local function fetch_prs(query_args)
+local function fetch_prs(query_args, host)
   local cmd = {
     "gh", "search", "prs",
     "--state=open",
@@ -40,9 +75,16 @@ local function fetch_prs(query_args)
   }
   vim.list_extend(cmd, query_args)
 
+  -- Merge current process env with a GH_HOST override. vim.fn.environ()
+  -- returns the full existing env as a table; we tack GH_HOST on top.
+  local env = vim.fn.environ()
+  if host then
+    env.GH_HOST = host
+  end
+
   -- vim.system: modern argv-style process spawn; no shell quoting needed.
   -- :wait() blocks until exit; text=true decodes stdout/stderr as strings.
-  local result = vim.system(cmd, { text = true }):wait()
+  local result = vim.system(cmd, { text = true, env = env }):wait()
 
   if result.code ~= 0 then
     return nil, (result.stderr or "") .. (result.stdout or "")
@@ -55,12 +97,12 @@ local function fetch_prs(query_args)
   return parsed
 end
 
--- Fetch all three sections. Accumulates errors rather than failing on the
--- first — we want to render whatever works.
-local function fetch_all()
-  local authored, err_a = fetch_prs({ "--author=@me" })
-  local review,   err_r = fetch_prs({ "--review-requested=@me" })
-  local assigned, err_s = fetch_prs({ "--assignee=@me" })
+-- Fetch the three sections for one host. Accumulates errors rather than
+-- failing on the first — we want to render whatever works.
+local function fetch_for_host(host)
+  local authored, err_a = fetch_prs({ "--author=@me" },           host)
+  local review,   err_r = fetch_prs({ "--review-requested=@me" }, host)
+  local assigned, err_s = fetch_prs({ "--assignee=@me" },         host)
   return {
     authored = authored or {},
     review   = review or {},
@@ -69,7 +111,22 @@ local function fetch_all()
   }
 end
 
--- Dedupe by PR url (authored+assigned often overlap).
+-- Top-level fetch: enumerate hosts, then fetch each. Returns an ordered
+-- list so the dashboard renders hosts in the order `gh auth status`
+-- listed them.
+local function fetch_all()
+  local hosts, host_err = list_hosts()
+  local results = {}
+  for _, host in ipairs(hosts) do
+    table.insert(results, { name = host, data = fetch_for_host(host) })
+  end
+  return {
+    hosts = results,
+    host_list_error = host_err,
+  }
+end
+
+-- Dedupe by PR url (authored+assigned often overlap within a host).
 local function dedupe(prs, seen)
   local out = {}
   for _, pr in ipairs(prs) do
@@ -95,18 +152,38 @@ end
 -- Append one section's heading and rows to `lines`; track URL per line.
 local function render_section(lines, pr_urls, title, prs)
   table.insert(lines, "")
-  table.insert(lines, string.format("  %s (%d)", title, #prs))
+  table.insert(lines, string.format("    %s (%d)", title, #prs))
   table.insert(lines, "")
   if #prs == 0 then
-    table.insert(lines, "    (none)")
+    table.insert(lines, "      (none)")
     return
   end
   for _, pr in ipairs(prs) do
     local repo = (pr.repository and pr.repository.nameWithOwner) or "?"
     table.insert(lines,
-      string.format("    %s%s#%d  %s",
+      string.format("      %s%s#%d  %s",
         status_token(pr), repo, pr.number, pr.title))
     pr_urls[#lines] = pr.url
+  end
+end
+
+-- Render one host's block (header + three sections + per-host warnings).
+local function render_host(lines, pr_urls, host_entry)
+  table.insert(lines, "")
+  table.insert(lines, string.format("  ━━━ %s ━━━", host_entry.name))
+
+  -- Dedupe reset per host: PR URLs are per-server, can't collide across hosts.
+  local seen = {}
+  render_section(lines, pr_urls, "AUTHORED",         dedupe(host_entry.data.authored, seen))
+  render_section(lines, pr_urls, "REVIEW REQUESTED", dedupe(host_entry.data.review,   seen))
+  render_section(lines, pr_urls, "ASSIGNED",         dedupe(host_entry.data.assigned, seen))
+
+  if #host_entry.data.errors > 0 then
+    table.insert(lines, "")
+    table.insert(lines, "    WARNINGS:")
+    for _, e in ipairs(host_entry.data.errors) do
+      table.insert(lines, "      " .. vim.trim(e))
+    end
   end
 end
 
@@ -127,18 +204,13 @@ local function render(data)
   table.insert(lines, "")
   table.insert(lines, "  <CR> open in browser   |   R refresh   |   q close")
 
-  -- Dedupe across sections (authored ∩ assigned is common).
-  local seen = {}
-  render_section(lines, pr_urls, "AUTHORED",         dedupe(data.authored, seen))
-  render_section(lines, pr_urls, "REVIEW REQUESTED", dedupe(data.review,   seen))
-  render_section(lines, pr_urls, "ASSIGNED",         dedupe(data.assigned, seen))
-
-  if #data.errors > 0 then
+  if data.host_list_error then
     table.insert(lines, "")
-    table.insert(lines, "  WARNINGS:")
-    for _, e in ipairs(data.errors) do
-      table.insert(lines, "    " .. vim.trim(e))
-    end
+    table.insert(lines, "  WARNING: " .. data.host_list_error)
+  end
+
+  for _, host_entry in ipairs(data.hosts) do
+    render_host(lines, pr_urls, host_entry)
   end
 
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
@@ -162,18 +234,16 @@ local function render(data)
   kmap("q", "<cmd>bdelete<cr>",        "Close homepage")
   kmap("R", function() M.open() end,   "Refresh homepage")
 
-  vim.api.nvim_set_current_buf(buf)
+  -- Silent wrapper suppresses autocmd chatter that can overflow cmdline
+  -- and trigger Neovim's "Press ENTER to continue" hit-enter prompt.
+  vim.cmd("silent! buffer " .. buf)
 end
 
 -- ── Public API ───────────────────────────────────────────────────────────
 
 function M.open()
-  vim.notify("Fetching GitHub PRs via gh…", vim.log.levels.INFO)
   local data = fetch_all()
   render(data)
-  -- Clear the "Fetching…" message from the cmdline area now that we're done.
-  -- (vim.notify lingers in classic cmdline until overwritten.)
-  vim.api.nvim_echo({ { "" } }, false, {})
 end
 
 function M.setup()
