@@ -1,19 +1,13 @@
--- rb.homepage — a minimal "start of day" dashboard showing my open GitHub PRs
--- across every host authenticated via `gh auth`.
+-- rb.homepage — a "start of day" dashboard showing open GitHub PRs across
+-- every host authenticated via `gh auth`.
 --
--- Demonstrates the fundamentals of writing a custom Neovim module:
---   • how a Lua module's public API looks (returned table `M`)
---   • creating a buffer, setting its options, writing lines
---   • registering a user command (`:Homepage`)
---   • buffer-local keymaps (<CR>, q, R)
---   • shelling out to an external CLI (`gh`) via `vim.system`
---   • parsing JSON into Lua tables
---   • overriding a subprocess's environment to target multiple gh hosts
+-- Fetching is async: the buffer opens instantly with per-host "Loading…"
+-- placeholders, one GraphQL call fires per host in parallel, and the
+-- buffer re-renders when every host has returned.
 --
 -- Triggered three ways:
 --   1. `:Homepage` command (registered via M.setup)
---   2. `neovide +Homepage` or `nvim +Homepage`   (Neovim's built-in
---      "run this command on VimEnter" syntax — acts like a CLI flag)
+--   2. `neovide +Homepage` or `nvim +Homepage`
 --   3. Programmatically: `require("rb.homepage").open()`
 --
 -- Example shell alias:
@@ -21,17 +15,54 @@
 
 local M = {}
 
+-- ── Module state ─────────────────────────────────────────────────────────
+
+-- Single reused buffer for the dashboard. q (:bdelete) invalidates it;
+-- next M.open() creates a new one via ensure_buf().
+local homepage_buf = nil
+
+-- Coalesce flag: while true, additional M.open() calls no-op. Cleared
+-- after the render completes. If the buffer is closed mid-fetch, the
+-- callback silently skips render and leaves in_flight as-is — the
+-- entry check in M.open also validates the buffer, so a stuck true
+-- doesn't block a fresh invocation.
+local in_flight = false
+
+-- ── GraphQL query ────────────────────────────────────────────────────────
+-- One call per host returns all three sections plus reviewDecision and
+-- review-thread resolved state. See:
+--   https://docs.github.com/en/graphql/reference/objects#pullrequest
+
+local GRAPHQL_QUERY = [[
+fragment PR on PullRequest {
+  number
+  title
+  url
+  isDraft
+  repository { nameWithOwner }
+  reviewDecision
+  reviewThreads(first: 50) { nodes { isResolved } }
+}
+
+query {
+  authored: viewer {
+    pullRequests(states: OPEN, first: 50, orderBy: { field: UPDATED_AT, direction: DESC }) {
+      nodes { ...PR }
+    }
+  }
+  reviewRequested: search(query: "is:pr is:open review-requested:@me", type: ISSUE, first: 50) {
+    nodes { ... on PullRequest { ...PR } }
+  }
+  assigned: search(query: "is:pr is:open assignee:@me", type: ISSUE, first: 50) {
+    nodes { ... on PullRequest { ...PR } }
+  }
+}
+]]
+
 -- ── Host discovery ───────────────────────────────────────────────────────
--- `gh auth status` prints something like:
---     github.com
---       ✓ Logged in to github.com account rybalt (keyring)
---       ...
---     github.enterprise.example.com
---       ✓ Logged in to github.enterprise.example.com account rbaltazar (...)
---       ...
---
--- No --json flag exists for this subcommand, so we parse the human output.
--- We match `Logged in to <host>` lines and dedupe, preserving order.
+
+-- Synchronous. `gh auth status` is fast (~100ms) and we need the list
+-- before firing the per-host fetches.
 local function list_hosts()
   local result = vim.system({ "gh", "auth", "status" }, { text = true }):wait()
   if result.code ~= 0 then
@@ -53,80 +84,57 @@ local function list_hosts()
   return hosts, nil
 end
 
--- ── Data fetching ────────────────────────────────────────────────────────
--- Fields we ask gh to return per PR. Only the ones we render.
--- (Full schema: `gh search prs --json`.)
-local FIELDS = table.concat({
-  "number", "title", "url",
-  "repository", "isDraft", "state",
-  "author", "labels", "createdAt", "updatedAt",
-}, ",")
+-- ── Async GraphQL fetch ──────────────────────────────────────────────────
 
--- Run one `gh search prs` invocation against a specific host.
--- query_args is a list of extra flags like {"--author=@me"}.
--- host sets GH_HOST for the subprocess so gh targets the right GitHub.
--- Returns parsed Lua table, or nil + error message.
-local function fetch_prs(query_args, host)
-  local cmd = {
-    "gh", "search", "prs",
-    "--state=open",
-    "--limit=50",
-    "--json=" .. FIELDS,
-  }
-  vim.list_extend(cmd, query_args)
+-- Fires one `gh api graphql` call targeting `host` (via GH_HOST env).
+-- callback(data, err) runs in libuv fast-event context — pure Lua ops
+-- only; any Neovim API work must be wrapped in vim.schedule() by the caller.
+local function fetch_graphql_async(host, callback)
+  local cmd = { "gh", "api", "graphql", "-f", "query=" .. GRAPHQL_QUERY }
 
-  -- Merge current process env with a GH_HOST override. vim.fn.environ()
-  -- returns the full existing env as a table; we tack GH_HOST on top.
+  -- Merge current env with GH_HOST override. vim.fn.environ() returns
+  -- the full existing env as a table; we tack GH_HOST on top.
   local env = vim.fn.environ()
   if host then
     env.GH_HOST = host
   end
 
-  -- vim.system: modern argv-style process spawn; no shell quoting needed.
-  -- :wait() blocks until exit; text=true decodes stdout/stderr as strings.
-  local result = vim.system(cmd, { text = true, env = env }):wait()
-
-  if result.code ~= 0 then
-    return nil, (result.stderr or "") .. (result.stdout or "")
-  end
-
-  local ok, parsed = pcall(vim.json.decode, result.stdout)
-  if not ok or type(parsed) ~= "table" then
-    return nil, "json parse failed: " .. (result.stdout or "")
-  end
-  return parsed
+  vim.system(cmd, { text = true, env = env }, function(result)
+    if result.code ~= 0 then
+      callback(nil, (result.stderr or "") .. (result.stdout or ""))
+      return
+    end
+    local ok, parsed = pcall(vim.json.decode, result.stdout)
+    if not ok or type(parsed) ~= "table" or not parsed.data then
+      callback(nil, "graphql parse failed: " .. (result.stdout or ""))
+      return
+    end
+    callback(parsed.data, nil)
+  end)
 end
 
--- Fetch the three sections for one host. Accumulates errors rather than
--- failing on the first — we want to render whatever works.
-local function fetch_for_host(host)
-  local authored, err_a = fetch_prs({ "--author=@me" },           host)
-  local review,   err_r = fetch_prs({ "--review-requested=@me" }, host)
-  local assigned, err_s = fetch_prs({ "--assignee=@me" },         host)
-  return {
-    authored = authored or {},
-    review   = review or {},
-    assigned = assigned or {},
-    errors = vim.tbl_filter(function(e) return e ~= nil end, { err_a, err_r, err_s }),
-  }
-end
+-- ── Rendering helpers ────────────────────────────────────────────────────
 
--- Top-level fetch: enumerate hosts, then fetch each. Returns an ordered
--- list so the dashboard renders hosts in the order `gh auth status`
--- listed them.
-local function fetch_all()
-  local hosts, host_err = list_hosts()
-  local results = {}
-  for _, host in ipairs(hosts) do
-    table.insert(results, { name = host, data = fetch_for_host(host) })
+local function unresolved_count(pr)
+  local n = 0
+  if pr.reviewThreads and pr.reviewThreads.nodes then
+    for _, t in ipairs(pr.reviewThreads.nodes) do
+      if not t.isResolved then n = n + 1 end
+    end
   end
-  return {
-    hosts = results,
-    host_list_error = host_err,
-  }
+  return n
 end
 
--- Dedupe by PR url (authored+assigned often overlap within a host).
+-- All tokens padded to 10 chars wide so PR rows align.
+local function status_token(pr)
+  if pr.isDraft then return "[DRAFT]   " end
+  local dec = pr.reviewDecision
+  if dec == "APPROVED"          then return "[APPROVED]" end
+  if dec == "CHANGES_REQUESTED" then return "[CHANGES] " end
+  -- REVIEW_REQUIRED or nil
+  return "[AWAITING]"
+end
+
 local function dedupe(prs, seen)
   local out = {}
   for _, pr in ipairs(prs) do
@@ -138,18 +146,6 @@ local function dedupe(prs, seen)
   return out
 end
 
--- ── Rendering ────────────────────────────────────────────────────────────
-
--- Short status token in front of each PR.
--- TODO: richer status (APPROVED / CHANGES_REQUESTED / AWAITING) requires
--- `gh api graphql` with a custom query; `gh search prs` doesn't expose
--- reviewDecision. Same deal for unresolved-thread counts.
-local function status_token(pr)
-  if pr.isDraft then return "[DRAFT] " end
-  return "[OPEN]  "
-end
-
--- Append one section's heading and rows to `lines`; track URL per line.
 local function render_section(lines, pr_urls, title, prs)
   table.insert(lines, "")
   table.insert(lines, string.format("    %s (%d)", title, #prs))
@@ -161,13 +157,12 @@ local function render_section(lines, pr_urls, title, prs)
   for _, pr in ipairs(prs) do
     local repo = (pr.repository and pr.repository.nameWithOwner) or "?"
     table.insert(lines,
-      string.format("      %s%s#%d  %s",
-        status_token(pr), repo, pr.number, pr.title))
+      string.format("      %s  %s#%d  %s  (%d unresolved)",
+        status_token(pr), repo, pr.number, pr.title, unresolved_count(pr)))
     pr_urls[#lines] = pr.url
   end
 end
 
--- Render one host's block (header + three sections + per-host warnings).
 local function render_host(lines, pr_urls, host_entry)
   table.insert(lines, "")
   table.insert(lines, string.format("  ━━━ %s ━━━", host_entry.name))
@@ -182,27 +177,89 @@ local function render_host(lines, pr_urls, host_entry)
     table.insert(lines, "")
     table.insert(lines, "    WARNINGS:")
     for _, e in ipairs(host_entry.data.errors) do
-      table.insert(lines, "      " .. vim.trim(e))
+      -- Errors may be multi-line (e.g. GraphQL error payloads); split.
+      for line in vim.trim(e):gmatch("[^\r\n]+") do
+        table.insert(lines, "      " .. line)
+      end
     end
   end
 end
 
--- Create the buffer, render into it, set keymaps, make it current.
-local function render(data)
-  -- nvim_create_buf(false, true) already implies buftype=nofile + no swap.
-  -- Use bufhidden=hide rather than wipe: snacks' BufWinEnter handlers race
-  -- with wipe and can see an invalid buffer id while processing.
-  local buf = vim.api.nvim_create_buf(false, true)
-  vim.bo[buf].bufhidden = "hide"
-  vim.bo[buf].filetype  = "homepage"  -- hook for future syntax highlighting
+-- ── Buffer management ────────────────────────────────────────────────────
 
-  local lines = {}
-  local pr_urls = {}  -- line_number → URL, for <CR>
+local function is_dashboard_open()
+  return homepage_buf and vim.api.nvim_buf_is_valid(homepage_buf)
+end
 
-  table.insert(lines, "  GitHub Homepage")
-  table.insert(lines, "  ═══════════════")
-  table.insert(lines, "")
-  table.insert(lines, "  <CR> open in browser   |   R refresh   |   q close")
+local function ensure_buf()
+  if is_dashboard_open() then return homepage_buf end
+  homepage_buf = vim.api.nvim_create_buf(false, true)
+  vim.bo[homepage_buf].bufhidden = "hide"
+  vim.bo[homepage_buf].filetype  = "homepage"
+  return homepage_buf
+end
+
+local function write_lines(buf, lines)
+  vim.bo[buf].modifiable = true
+  vim.bo[buf].readonly   = false
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+  vim.bo[buf].modifiable = false
+  vim.bo[buf].readonly   = true
+end
+
+local function bind_keymaps(buf, pr_urls)
+  local kmap = function(lhs, rhs, desc)
+    vim.keymap.set("n", lhs, rhs, { buffer = buf, silent = true, desc = desc })
+  end
+  kmap("<CR>", function()
+    local lnum = vim.api.nvim_win_get_cursor(0)[1]
+    local url = pr_urls[lnum]
+    if url then
+      -- macOS. Linux: "xdg-open". Windows: "start".
+      vim.fn.jobstart({ "open", url }, { detach = true })
+    end
+  end, "Open PR in browser")
+  kmap("q", "<cmd>bdelete<cr>",       "Close homepage")
+  kmap("R", function() M.open() end,  "Refresh homepage")
+end
+
+local function show_skeleton(buf, hosts, host_err)
+  local lines = {
+    "  GitHub Homepage",
+    "  ═══════════════",
+    "",
+    "  <CR> open in browser   |   R refresh   |   q close",
+  }
+  if host_err then
+    table.insert(lines, "")
+    table.insert(lines, "  WARNING: " .. host_err)
+  end
+  for _, host in ipairs(hosts) do
+    table.insert(lines, "")
+    table.insert(lines, string.format("  ━━━ %s ━━━", host))
+    table.insert(lines, "    Loading…")
+  end
+
+  write_lines(buf, lines)
+  -- Bind keymaps with empty pr_urls: <CR> is a no-op during skeleton;
+  -- q and R already work. render_into will rebind with live URLs.
+  bind_keymaps(buf, {})
+
+  -- Silent buffer switch avoids BufWinEnter autocmd chatter that can
+  -- overflow cmdline and trigger the "Press ENTER" hit-enter prompt.
+  vim.cmd("silent! buffer " .. buf)
+end
+
+local function render_into(buf, data)
+  if not vim.api.nvim_buf_is_valid(buf) then return end
+
+  local lines = {
+    "  GitHub Homepage",
+    "  ═══════════════",
+    "",
+    "  <CR> open in browser   |   R refresh   |   q close",
+  }
+  local pr_urls = {}
 
   if data.host_list_error then
     table.insert(lines, "")
@@ -213,37 +270,60 @@ local function render(data)
     render_host(lines, pr_urls, host_entry)
   end
 
-  vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
-  vim.bo[buf].modifiable = false
-  vim.bo[buf].readonly   = true
-
-  -- Buffer-local keymaps.
-  local kmap = function(lhs, rhs, desc)
-    vim.keymap.set("n", lhs, rhs, { buffer = buf, silent = true, desc = desc })
-  end
-
-  kmap("<CR>", function()
-    local lnum = vim.api.nvim_win_get_cursor(0)[1]
-    local url = pr_urls[lnum]
-    if url then
-      -- macOS. Linux: "xdg-open". Windows: "start".
-      vim.fn.jobstart({ "open", url }, { detach = true })
-    end
-  end, "Open PR in browser")
-
-  kmap("q", "<cmd>bdelete<cr>",        "Close homepage")
-  kmap("R", function() M.open() end,   "Refresh homepage")
-
-  -- Silent wrapper suppresses autocmd chatter that can overflow cmdline
-  -- and trigger Neovim's "Press ENTER to continue" hit-enter prompt.
-  vim.cmd("silent! buffer " .. buf)
+  write_lines(buf, lines)
+  bind_keymaps(buf, pr_urls)
 end
 
 -- ── Public API ───────────────────────────────────────────────────────────
 
 function M.open()
-  local data = fetch_all()
-  render(data)
+  -- Coalesce: if a fetch is already running AND the dashboard is still
+  -- visible, ignore the request. If the dashboard was closed mid-fetch
+  -- (q + :Homepage), proceed — the stale callbacks will silently no-op
+  -- on the old invalid buffer.
+  if in_flight and is_dashboard_open() then return end
+  in_flight = true
+
+  local hosts, host_err = list_hosts()
+  local buf = ensure_buf()
+  show_skeleton(buf, hosts, host_err)
+
+  -- Pre-seed result slots; each callback writes exactly one slot.
+  local host_results = {}
+  local pending = #hosts
+
+  for _, host in ipairs(hosts) do
+    fetch_graphql_async(host, function(data, err)
+      if data then
+        host_results[host] = {
+          authored = (data.authored and data.authored.pullRequests and data.authored.pullRequests.nodes) or {},
+          review   = (data.reviewRequested and data.reviewRequested.nodes) or {},
+          assigned = (data.assigned and data.assigned.nodes) or {},
+          errors   = {},
+        }
+      else
+        host_results[host] = { authored = {}, review = {}, assigned = {}, errors = { err or "unknown error" } }
+      end
+
+      pending = pending - 1
+      if pending == 0 then
+        -- Marshal to the main thread before touching Neovim APIs.
+        vim.schedule(function()
+          if vim.api.nvim_buf_is_valid(buf) then
+            local assembled = { hosts = {}, host_list_error = host_err }
+            for _, h in ipairs(hosts) do
+              table.insert(assembled.hosts, { name = h, data = host_results[h] })
+            end
+            render_into(buf, assembled)
+            in_flight = false
+          end
+          -- If buf was deleted mid-fetch, leave in_flight alone; the
+          -- entry check in M.open validates the buffer so a stuck-true
+          -- in_flight doesn't block a fresh start.
+        end)
+      end
+    end)
+  end
 end
 
 function M.setup()

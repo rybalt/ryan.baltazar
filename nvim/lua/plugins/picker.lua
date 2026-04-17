@@ -1,15 +1,24 @@
--- Picker layout: top-center floating frame (matches vertico-posframe from Emacs)
--- LazyVim uses snacks.picker by default.
+-- snacks.picker configuration.
+-- - layout: top-center floating frame (matches vertico-posframe from Emacs)
+-- - files source: include dotted dirs (.github, .claude, agent docs, etc.)
+--   while still respecting .gitignore (Unity Library/ etc. stay hidden).
+--   .git itself is excluded explicitly since we don't want git internals.
 return {
   {
     "folke/snacks.nvim",
     opts = {
       picker = {
-        -- "dropdown" is snacks' built-in top-anchored float preset.
-        -- If it's not close enough to the Emacs vertico-posframe feel,
-        -- we can define a custom layout here instead.
         layout = {
           preset = "dropdown",
+        },
+        sources = {
+          files = {
+            hidden  = true,                      -- --hidden: include dotted paths
+            follow  = true,                      -- -L: follow symlinks (docs/ → planning/)
+            exclude = { ".git", ".vscode" },     -- but not git internals or per-user editor config
+            -- ignored stays default (respect .gitignore): build artifacts
+            -- and anything an explicit .gitignore / .fdignore hides stays hidden.
+          },
         },
       },
     },

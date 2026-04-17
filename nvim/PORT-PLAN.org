@@ -17,20 +17,20 @@ and the ability to easily find markdown files that live in gitignored
 
 * Chosen stack
 
-| Component          | Choice                        | Notes                                                      |
-|--------------------+-------------------------------+------------------------------------------------------------|
-| Bootstrap          | LazyVim                       | folke's plugin spec ecosystem; =<leader>= is =SPC=         |
-| GUI                | Neovide                       | Per-highlight-group fonts enable variable-pitch prose      |
-| Theme              | monokai-pro.nvim              | Port of doom-monokai-pro from Emacs                        |
-| Code font          | FiraMono Nerd Font            | Kept from Emacs config                                     |
-| Prose font         | iA Writer Quattro             | Variable-pitch serif; installed via Homebrew               |
-| Git UI             | Neogit                        | Magit-shaped; starting here, Lazygit TBD if needed         |
-| GitHub links       | gitlinker.nvim                | Replaces =rb-github-link.el=                               |
-| Markdown rendering | render-markdown.nvim          | Inline rendering, un-renders on cursor entry               |
-| Centered column    | no-neck-pain.nvim             | Replaces =olivetti-mode=                                   |
-| Claude Code IDE    | coder/claudecode.nvim         | WebSocket IDE protocol; Claude Code stays in iTerm2 hotkey |
-| Picker             | LazyVim default (snacks.nvim) | Configured for top-center float                            |
-| C# LSP             | *deferred as TODO*            | Rider is the primary C# tool                               |
+| Component          | Choice                        | Notes                                                        |
+|--------------------+-------------------------------+--------------------------------------------------------------|
+| Bootstrap          | LazyVim                       | folke's plugin spec ecosystem; =<leader>= is =SPC=           |
+| GUI                | Neovide                       | Per-highlight-group fonts enable variable-pitch prose        |
+| Theme              | monokai-pro.nvim              | Port of doom-monokai-pro from Emacs                          |
+| Code font          | FiraMono Nerd Font            | Kept from Emacs config                                       |
+| Prose font         | iA Writer Quattro             | Variable-pitch serif; installed via Homebrew                 |
+| Git UI             | Neogit                        | Magit-shaped; starting here, Lazygit TBD if needed           |
+| GitHub links       | gitlinker.nvim                | Replaces =rb-github-link.el=                                 |
+| Markdown rendering | render-markdown.nvim          | Inline rendering, insert mode shows raw markdown             |
+| Centered column    | zen-mode.nvim                 | Replaces =olivetti-mode=; no-neck-pain moved file tree       |
+| Claude Code IDE    | coder/claudecode.nvim         | WebSocket IDE protocol; Claude Code stays in iTerm2 hotkey   |
+| Picker             | LazyVim default (snacks.nvim) | Configured for top-center float                              |
+| C# LSP             | seblyng/roslyn.nvim           | Phase 8; Roslyn LSP, Unity file-watch companion              |
 
 * Prerequisites
 
@@ -134,18 +134,22 @@ LazyVim layout: user config lives under =~/.config/nvim/lua/=:
 │   │   ├── lazy.lua          # (LazyVim-managed)
 │   │   ├── options.lua       # vim.opt overrides
 │   │   ├── keymaps.lua       # leader bindings
-│   │   └── autocmds.lua      # rb-prose-mode equivalent
+│   │   └── autocmds.lua      # rb-prose-mode equivalent + homepage setup
 │   ├── plugins/
 │   │   ├── colorscheme.lua   # monokai-pro
-│   │   ├── markdown.lua      # render-markdown + no-neck-pain
+│   │   ├── markdown.lua      # render-markdown + zen-mode
 │   │   ├── claude.lua        # claudecode.nvim
 │   │   ├── git.lua           # Neogit + gitlinker
 │   │   ├── picker.lua        # picker layout override
-│   │   └── prose.lua         # variable-pitch highlight overrides
+│   │   ├── blink.lua         # blink.cmp super-tab + debounced auto-show
+│   │   ├── noice.lua         # quieter notifications
+│   │   └── indent.lua        # snacks.indent animate=false
 │   └── rb/
-│       ├── workspace.lua     # root detection + SPC w bindings
-│       ├── multi-repo.lua    # rb-magit-status Neogit equivalent
-│       └── changed-files.lua # rb-changed-files equivalent
+│       ├── homepage/
+│       │   └── init.lua      # async PR dashboard plugin
+│       ├── workspace.lua     # root detection + SPC w bindings (deferred)
+│       ├── multi-repo.lua    # rb-magit-status Neogit equivalent (deferred)
+│       └── changed-files.lua # rb-changed-files equivalent (deferred)
 └── ginit.vim or init-gui.lua # Neovide-specific font/cursor config
 #+end_src
 
@@ -337,17 +341,38 @@ Replaces =rb-changed-files= (=SPC g d=). A picker sourced from
 =git ls-files --others --exclude-standard=, with a column of
 =+X -Y= numstat annotations.
 
+** =lua/rb/homepage/init.lua= — async PR dashboard
+
+Custom plugin showing GitHub PRs authored by, assigned to, or
+review-requested from the authenticated user. Fetches via =gh= CLI
+using GraphQL (=vim.system= callback + =vim.schedule= for Neovim API
+access). Multi-host auth discovery (parses =gh auth status= output).
+In-flight coalescing: extraneous opens during a pending fetch are
+ignored if the buffer is still visible. Status tokens:
+=[DRAFT]/[APPROVED]/[CHANGES]/[AWAITING]= with unresolved thread counts.
+
 * Prose prettification
 
 Replaces =rb-prose-mode= (olivetti + mixed-pitch + org-modern glyphs +
 visual-line-mode). The Neovim equivalent stacks:
 
-- =render-markdown.nvim= — heading glyphs/sizes, code block backgrounds,
-  list bullets, checkboxes (un-renders on cursor entry for editing)
-- =no-neck-pain.nvim= — centered column (olivetti replacement)
+- =render-markdown.nvim= — code block backgrounds, list bullets (●◦▸),
+  checkboxes (☐☑). Headings disabled (=heading.enabled = false=) so raw
+  =#/==/=### are preserved rather than replaced with glyphs.
+  =render_modes= excludes ='i'= so insert mode shows raw markdown.
+  =anti_conceal.enabled = false= to avoid cursor-line pop-in.
+- =zen-mode.nvim= — centered column (olivetti replacement); hides side
+  windows during focus so it doesn't fight the file tree. Bound to =<leader>uz=.
+  (no-neck-pain.nvim was tried first but moved the file tree.)
 - Neovide per-highlight-group =guifont= — variable-pitch prose, fixed-pitch code
 
-** Neovide config (=init-gui.lua= or =ginit.vim=)
+  *Known limitation*: =nvim_set_hl= does not accept a ="font"= key; the API
+  rejected it at runtime. Per-highlight-group font switching is a Neovide
+  extension but must be done via =GuiFont= commands or =highlight-gui=, not
+  the standard Lua =nvim_set_hl= API. This remains unresolved — iA Writer Quattro
+  is not currently active. The =font= lines in the autocmd have been removed.
+
+** Neovide config (=lua/config/options.lua=, guarded by =vim.g.neovide=)
 
 #+begin_src lua
 if vim.g.neovide then
@@ -356,142 +381,258 @@ if vim.g.neovide then
   vim.g.neovide_padding_bottom = 12
   vim.g.neovide_padding_left   = 12
   vim.g.neovide_padding_right  = 12
-  vim.g.neovide_cursor_animation_length = 0.05
-  vim.g.neovide_cursor_trail_size       = 0.2
-  vim.g.neovide_scroll_animation_length = 0.1
+  vim.g.neovide_cursor_animation_length = 0       -- cursor animation off
+  vim.g.neovide_cursor_trail_size       = 0
+  vim.g.neovide_scroll_animation_length = 0.1     -- scroll animation on
+  vim.g.neovide_floating_blur_amount_x  = 2.0
+  vim.g.neovide_floating_blur_amount_y  = 2.0
+  vim.g.neovide_input_use_logo          = 1       -- macOS Cmd key as leader for D-* bindings
 end
-#+end_src
-
-** Variable-pitch prose highlight overrides
-
-Neovide supports per-highlight-group font overrides. Apply iA Writer
-Quattro to prose faces; keep FiraMono on code:
-
-#+begin_src lua
--- Markdown-mode autocmd: activate prose treatment
-vim.api.nvim_create_autocmd("FileType", {
-  pattern = { "markdown", "text" },
-  callback = function()
-    vim.opt_local.wrap = true
-    vim.opt_local.linebreak = true
-    vim.opt_local.breakindent = true
-    vim.cmd("NoNeckPain")
-
-    -- Scale headings; apply iA Writer Quattro to prose
-    local prose_font = "iA Writer Quattro S:h14"
-    for _, group in ipairs({
-      "RenderMarkdownH1", "RenderMarkdownH2", "RenderMarkdownH3",
-      "RenderMarkdownH4", "@markup.heading",
-      "Normal", "@text", "@markup",
-    }) do
-      vim.api.nvim_set_hl(0, group, { font = prose_font })
-    end
-    -- Keep code blocks in mono
-    vim.api.nvim_set_hl(0, "@markup.raw", { font = "FiraMono Nerd Font:h14" })
-    vim.api.nvim_set_hl(0, "@markup.raw.block", { font = "FiraMono Nerd Font:h14" })
-  end,
-})
 #+end_src
 
 * Incremental port plan
 
-Work through these phases in order. Do not proceed to the next until
-the current is verified.
+Phases 1–7 are complete. Phase 8 (C# LSP) is next and requires
+access to Unity internals — hand off to the Unity-permissioned agent.
 
-** Phase 1: First launch and core editor feel
+** Phase 1: First launch and core editor feel ✓ DONE
 *** Sign-off
-- [ ] Neovide launches, LazyVim installs without errors
-- [ ] =:checkhealth= clean
-- [ ] Default theme readable, modal indicator visible
-- [ ] =SPC f f= opens a file picker, =s= triggers flash jump
-- [ ] User sign-off
+- [x] Neovide launches, LazyVim installs without errors
+- [x] =:checkhealth= clean
+- [x] Default theme readable, modal indicator visible
+- [x] =SPC f f= opens a file picker, =s= triggers flash jump
+- [x] User sign-off
 
-** Phase 2: Theme and fonts
+** Phase 2: Theme and fonts ✓ DONE
 *** Sign-off
-- [ ] monokai-pro.nvim applied, matches Emacs =doom-monokai-pro= feel
-- [ ] FiraMono Nerd Font rendering correctly with icons
-- [ ] Picker renders as top-center float
-- [ ] User sign-off
+- [x] monokai-pro.nvim applied, matches Emacs =doom-monokai-pro= feel
+- [x] FiraMono Nerd Font rendering correctly with icons
+- [x] Picker renders as top-center float
+- [x] User sign-off
 
-** Phase 3: Markdown prettification workflow
+** Phase 3: Markdown prettification workflow ✓ DONE
 
 The highest-priority workflow per the migration's primary goal (inline
 comments in prettified markdown as agent instructions). Land this before
 anything else that isn't pure bootstrapping, because the whole point of
 the migration is to preserve this workflow.
 
-*** Sign-off
-- [ ] render-markdown.nvim rendering headings/lists/code blocks
-- [ ] no-neck-pain.nvim centers column
-- [ ] iA Writer Quattro applied to prose, FiraMono to code blocks
-- [ ] Cursor entry into a rendered line reveals the raw markdown (for editing)
-- [ ] User sign-off
-
-** Phase 4: Workspace root detection and file-finding
-
-Neovim's CWD concept makes this noticeably less painful than the Emacs
-equivalent. In Emacs, =default-directory= follows the current buffer,
-which means "workspace root" has to be recomputed for every buffer and
-tends to drift unpredictably (especially through symlinks). In Neovim,
-CWD is process-wide and stable; setting =noautochdir= pins it at launch
-and root detection becomes a one-shot walk from CWD. If LazyVim's
-default picker scoping (git root) is close enough, this phase might be
-reduced to just wiring =SPC w f= / =SPC w F= overrides for the
-umbrella-wide case.
+Implemented: =render-markdown.nvim= with headings disabled (raw =#=),
+render_modes excludes insert, =zen-mode.nvim= for centered column
+(=<leader>uz=), blink.cmp debounce for comfortable in-prose completion.
+Variable-pitch font (iA Writer Quattro) not yet active — see known
+limitation in Prose prettification section above.
 
 *** Sign-off
-- [ ] =lua/rb/workspace.lua= installed
-- [ ] =:WorkspaceInit /opt/UnitySrc/repos/rybalt= (or an existing umbrella)
-  creates =.projectile= and =.fdignore=
-- [ ] =SPC w f= finds =docs/planning/=*.md files through the symlink
-- [ ] =SPC w f= finds =.claude/=*.md files (gitignored)
-- [ ] =SPC w f= does NOT surface =Library/=, =Temp/=, =build/= from
-  a Unity test project
-- [ ] =SPC w F= surfaces everything (build artifacts etc.)
-- [ ] User sign-off
+- [x] render-markdown.nvim rendering lists/code blocks/checkboxes
+- [x] Raw =#/==/=### headings (heading.enabled=false)
+- [x] zen-mode.nvim centers column without disturbing file tree
+- [x] Insert mode shows raw markdown; normal mode renders
+- [x] User sign-off
 
-** Phase 5: Claude Code integration
-*** Sign-off
-- [ ] claudecode.nvim installed, WebSocket server starts on Neovide launch
-- [ ] =/ide= in iTerm2 Claude Code session discovers Neovide
-- [ ] A Claude Code edit renders as a diff buffer in Neovide
-- [ ] Hunk-level accept/reject keybindings work
-- [ ] User sign-off
+** Phase 4: Workspace root detection and file-finding ✓ DONE
 
-** Phase 6: Git (Neogit + gitlinker + gitsigns)
-*** Sign-off
-- [ ] Neogit opens on =SPC g g= via =rb.multi_repo= picker
-- [ ] =SPC g d= shows staged/unstaged/untracked picker with numstat
-- [ ] =SPC g y= copies a GitHub permalink for the current line
-- [ ] =]h= / =[h= navigate hunks in a modified file
-- [ ] User sign-off
+=<leader><space>= (snacks files picker) configured with =hidden=true=,
+=follow=true= (symlinks), =exclude={".git",".vscode"}=. This covers the
+primary file-finding case. Full =SPC w f= umbrella-scoped picker and
+=lua/rb/workspace.lua= are deferred (original phase structure was flipped).
 
-** Phase 7: Nice-to-haves
 *** Sign-off
-- [ ] rainbow-delimiters for lisp/treesitter brackets
-- [ ] indent guides (snacks.indent or indent-blankline)
-- [ ] diffview.nvim for multi-file diff review (ediff replacement)
-- [ ] bufferline at top
+- [x] =<leader><space>= finds files in dotdirs (=.claude/=)
+- [x] Symlinked =docs/= directory traversed correctly (=follow=true=)
+- [x] =.vscode= and =.git= excluded
+- [x] User sign-off
+
+** Phase 5: Claude Code integration ✓ DONE
+*** Sign-off
+- [x] claudecode.nvim installed, WebSocket server starts on Neovide launch
+- [x] =/ide= in iTerm2 Claude Code session discovers Neovide
+- [x] A Claude Code edit renders as a diff buffer in Neovide
+- [x] Hunk-level accept/reject keybindings work (=SPC C a/s/b/d=)
+- [x] User sign-off
+
+** Phase 6: Git (Neogit + gitlinker + gitsigns) ✓ DONE
+
+Buffer-aware repo detection via =buffer_repo_root()= (walks up from
+buffer path, not CWD) so git operations target the right sub-repo in
+the umbrella.
+
+*** Sign-off
+- [x] Neogit opens on =SPC g g= (buffer-repo-aware)
+- [x] =SPC g y= copies a GitHub permalink for the current line
+- [x] =]h= / =[h= navigate hunks in a modified file
+- [x] User sign-off
+
+** Phase 7: Quality-of-life polish ✓ DONE
+
+Completed incrementally during daily use:
+
+- *Completions*: blink.cmp super-tab preset (Tab/S-Tab instead of C-n/C-p);
+  auto_show=false with debounced TextChangedI trigger (min-prefix=3,
+  delay=250ms, libuv timer, hoisted upvalues for hot-path performance).
+- *Indent guides*: snacks.indent with =animate=false= (animated bar was distracting).
+- *Notifications*: noice.nvim messages and notify routing quieted (hit-enter prompts
+  suppressed for the homepage plugin).
+- *macOS keybindings*: Cmd-v/c/s/a in all modes (guarded by =vim.g.neovide=).
+- *Homepage plugin* (=lua/rb/homepage/init.lua=): async GraphQL PR dashboard.
+  Multi-host gh auth discovery; coalesced refresh (in-flight guard); status tokens
+  [DRAFT]/[APPROVED]/[CHANGES]/[AWAITING]; unresolved thread counts.
+
+*** Sign-off
+- [x] Tab/S-Tab completion navigation
+- [x] Completion menu does not pop up on every keystroke (min-prefix + delay)
+- [x] Indent guide visible but not animating
+- [x] =<leader>h= opens homepage PR dashboard
+- [x] User sign-off
+
+** Phase 8: C# LSP (Roslyn + Unity file watching)
+
+*Requires Unity-permissioned agent.* This agent cannot access Unity
+internals needed to validate LSP attachment and =.sln= generation.
+Full design in =nvim/neovim-csharp-unity-lsp.md=.
+
+*** Stack decision
+
+| Plugin                             | Role                             | Priority           |
+|------------------------------------+----------------------------------+--------------------|
+| =seblyng/roslyn.nvim=              | C# LSP, multi-solution mgmt      | Required           |
+| =khoido2003/roslyn-filewatch.nvim= | Unity-aware file watching        | Required for Unity |
+| =bosvik/roslyn-diagnostics.nvim=   | On-demand workspace diagnostics  | Optional           |
+| =stevearc/overseer.nvim=           | Async build tasks → quickfix     | Optional           |
+
+Use *upstream* =seblyng/roslyn.nvim=. The Unity-focused fork enables
+preprocessor branch dimming by default — this is explicitly unwanted for
+cross-platform package code that targets many platforms simultaneously.
+Do NOT use OmniSharp (abandoned, memory leaks).
+
+*** Mason setup
+
+Add the community registry to pick up Roslyn:
+
+#+begin_src lua
+require("mason").setup({
+  registries = {
+    "github:mason-org/mason-registry",
+    "github:Crashdummyy/mason-registry",
+  },
+})
+#+end_src
+
+Then =:MasonInstall roslyn=.
+
+*** Plugin config (=lua/plugins/csharp.lua=)
+
+#+begin_src lua
+return {
+  {
+    "seblyng/roslyn.nvim",
+    ft = "cs",
+    opts = {
+      broad_search  = true,    -- walk upward to find .sln in hermetic dir
+      lock_target   = false,   -- allow switching between solutions
+      filewatching  = "off",   -- CRITICAL: default causes perf drop on Unity
+    },
+  },
+  {
+    "khoido2003/roslyn-filewatch.nvim",
+    ft = { "cs" },
+    opts = {
+      preset = "auto",           -- auto-detects Unity, applies optimized settings
+      client_names = { "roslyn" },
+      deferred_loading = true,   -- wait until first .cs file is opened
+      diagnostic_throttling = {
+        enabled      = true,
+        debounce_ms  = 500,
+        visible_only = true,     -- only request diagnostics for visible buffers
+      },
+    },
+  },
+}
+#+end_src
+
+Optionally, limit background analysis scope to avoid Roslyn crashes on
+large Unity solutions:
+
+#+begin_src lua
+vim.lsp.config("roslyn", {
+  settings = {
+    ["csharp|background_analysis"] = {
+      dotnet_analyzer_diagnostics_scope  = "openFiles",
+      dotnet_compiler_diagnostics_scope  = "fullSolution",
+    },
+  },
+})
+#+end_src
+
+*** .sln / .csproj generation
+
+Roslyn reads Unity-generated =.sln=/.csproj= files — it cannot create
+them. Workflow:
+
+1. *Rider or Unity Editor* generates files initially (Rider auto-regenerates
+   via the JetBrains Rider Editor package; Unity: Edit → Preferences →
+   External Tools → Regenerate Project Files).
+2. Regenerate when =.asmdef= files change or packages are added.
+3. Staleness signal: go-to-definition can't find a newly added type, or
+   =UnityEngine= namespace errors appear. Regenerate, roslyn picks up
+   changes automatically.
+
+Batch-mode regeneration (no UI):
+#+begin_src shell
+/path/to/Unity -batchmode -nographics -logFile - \
+  -executeMethod UnityEditor.SyncVS.SyncSolution \
+  -projectPath /path/to/project -quit
+#+end_src
+
+*** Open questions for the Unity agent
+
+1. *=choose_target= / =ignore_target= logic*: given the hermetic directory
+   (multiple repos, each with its own =.sln=), does =broad_search= pick the
+   right solution, or is a custom Lua predicate needed? Test with a real
+   =.cs= file from one of the test projects and verify via =:checkhealth roslyn=.
+
+2. *=dotnet_analyzer_diagnostics_scope=*: start with =openFiles= for analyzer
+   scope and =fullSolution= for compiler scope. Tune if Roslyn pegs the CPU.
+
+3. *Debugging*: keep Rider. Unity nvim-dap is possible but painful given
+   Rider is already in the workflow. Reference if ever needed:
+   https://www.ownself.org/2025/setup-neovim-for-unity-development.html
+
+*** Sign-off
+- [ ] =:MasonInstall roslyn= completes without errors
+- [ ] =roslyn-filewatch.nvim= installed; =:checkhealth roslyn_filewatch= clean
+- [ ] Opening a =.cs= file attaches Roslyn to the correct =.sln=
+- [ ] =:RoslynEngineInfo= shows Unity mode active
+- [ ] Go-to-definition navigates to a =UnityEngine= type
+- [ ] Diagnostics appear for a deliberate type error
+- [ ] No perf drop during normal Unity Editor operation (file watching OK)
 - [ ] User sign-off
 
 * Deferred / TODO
 
-** C# LSP (omnisharp or csharp-ls)
+** Workspace umbrella scoping (=SPC w f=)
 
-Rider remains the primary C# tool. Syntax highlighting only in Neovim
-is sufficient for quick edits. If this becomes painful (e.g. reading
-Unity package code frequently in Neovim), enable LazyVim's C# extra
-or port =rb-csharp.el='s =.sln= resolution logic to Lua.
+=lua/rb/workspace.lua= not yet wired up. =<leader><space>= with LazyVim
+defaults is sufficient for now. If umbrella-scoped file-finding becomes
+necessary (e.g. after moving CWD frequently), implement the =.projectile=
+walk logic from the spec above.
 
 ** C++ LSP (clangd)
 
 Not yet evaluated. NativePlugin~ work may benefit, but Rider also
-handles this. Revisit after phase 7.
+handles C++. Revisit if Neovim becomes the primary editor for NativePlugin work.
 
 ** Lazygit as a second git UI
 
-Phase 6 starts with Neogit only. If Neogit's UX is missing something,
-install =kdheepak/lazygit.nvim= and bind to =SPC g G=. No rush.
+Neogit only. If Neogit's UX is missing something, install
+=kdheepak/lazygit.nvim= and bind to =SPC g G=. No rush.
+
+** Variable-pitch prose font
+
+=nvim_set_hl= rejects the ="font"= key at runtime. Need to find the
+correct Neovide API for per-highlight-group font assignment. Likely
+=vim.cmd("highlight Normal guifont=...")= or a Neovide-specific call.
+Low priority; zen-mode + render-markdown is usable without it.
 
 * Reference: feature mapping from Emacs config
 
@@ -510,7 +651,7 @@ Full audit of what ports where. "Skip" means intentionally not ported.
 | avy (=SPC SPC=)                    | flash.nvim =s= / =S=                          |
 | goto-chg (=g;=/=g,=)               | native Neovim                                 |
 | diff-hl + =]c=/=[c=                | gitsigns.nvim + =]h=/=[h=                     |
-| indent-bars                        | snacks.indent or indent-blankline.nvim        |
+| indent-bars                        | snacks.indent (animate=false)                 |
 | editorconfig                       | editorconfig.nvim (built-in since 0.9)        |
 | autorevert / savehist / saveplace  | built-in shada + =autoread=                   |
 | recentf                            | snacks.picker recent + =v:oldfiles=           |
@@ -521,19 +662,20 @@ Full audit of what ports where. "Skip" means intentionally not ported.
 
 ** Reimagined (different shape)
 
-| Emacs                           | Neovim                                              |
-|---------------------------------+-----------------------------------------------------|
-| treemacs sidebar                | snacks.explorer (LazyVim default) or neo-tree.nvim  |
-| magit                           | Neogit (Lazygit as fallback if Neogit falls short)  |
-| rb-prose-mode stack             | render-markdown + no-neck-pain + Neovide per-hl fonts |
-| doom-modeline                   | lualine.nvim (LazyVim default)                      |
-| doom-monokai-pro                | monokai-pro.nvim                                    |
-| vertico-posframe top-center     | snacks.picker layout override                       |
-| ediff/vdiff + custom colors     | diffview.nvim (defaults)                            |
-| rb-setup SPC w / SPC r          | =lua/rb/workspace.lua= + LazyVim SPC f defaults     |
-| rb-magit-status (multi-repo)    | =lua/rb/multi-repo.lua= wrapping Neogit             |
-| rb-changed-files                | =lua/rb/changed-files.lua= using snacks picker      |
-| rb-github-link                  | gitlinker.nvim                                      |
+| Emacs                           | Neovim                                                      |
+|---------------------------------+-------------------------------------------------------------|
+| treemacs sidebar                | snacks.explorer (LazyVim default) or neo-tree.nvim          |
+| magit                           | Neogit (Lazygit as fallback if Neogit falls short)          |
+| rb-prose-mode stack             | render-markdown + zen-mode + Neovide per-hl fonts (partial) |
+| doom-modeline                   | lualine.nvim (LazyVim default)                              |
+| doom-monokai-pro                | monokai-pro.nvim                                            |
+| vertico-posframe top-center     | snacks.picker layout override                               |
+| ediff/vdiff + custom colors     | diffview.nvim (defaults)                                    |
+| rb-setup SPC w / SPC r          | =lua/rb/workspace.lua= + LazyVim SPC f defaults             |
+| rb-magit-status (multi-repo)    | =lua/rb/multi-repo.lua= wrapping Neogit                     |
+| rb-changed-files                | =lua/rb/changed-files.lua= using snacks picker              |
+| rb-github-link                  | gitlinker.nvim                                              |
+| (new) GitHub PR dashboard       | =lua/rb/homepage/init.lua= (custom plugin)                  |
 
 ** Skipped (decided not to port)
 
@@ -541,7 +683,7 @@ Full audit of what ports where. "Skip" means intentionally not ported.
 |-------------------------------+-----------------------------------------------------|
 | rb-buffers.el (MRU sidebar)   | Picker + bufferline covers it                       |
 | rb-diffs.el (multi-repo diff) | claudecode.nvim diffs + gitsigns cover the use case |
-| rb-csharp.el                  | Deferred as TODO (see above)                        |
+| rb-csharp.el                  | Superseded by Phase 8 (Roslyn LSP)                  |
 | rb-org-todos.el (DQ_)         | Org stays in Emacs                                  |
 | eat terminal                  | No in-editor terminal (per handoff)                 |
 | nyan-mode                     | Disabled in Emacs config anyway                     |
