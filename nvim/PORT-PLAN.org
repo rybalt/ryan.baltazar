@@ -143,7 +143,8 @@ LazyVim layout: user config lives under =~/.config/nvim/lua/=:
 │   │   ├── picker.lua        # picker layout override
 │   │   ├── blink.lua         # blink.cmp super-tab + debounced auto-show
 │   │   ├── noice.lua         # quieter notifications
-│   │   └── indent.lua        # snacks.indent animate=false
+│   │   ├── indent.lua        # snacks.indent animate=false
+│   │   └── csharp.lua        # roslyn.nvim + roslyn-filewatch + solution discovery
 │   └── rb/
 │       ├── homepage/
 │       │   └── init.lua      # async PR dashboard plugin
@@ -392,8 +393,7 @@ end
 
 * Incremental port plan
 
-Phases 1–7 are complete. Phase 8 (C# LSP) is next and requires
-access to Unity internals — hand off to the Unity-permissioned agent.
+Phases 1–7 are complete. Phase 8 (C# LSP) is in progress.
 
 ** Phase 1: First launch and core editor feel ✓ DONE
 *** Sign-off
@@ -487,9 +487,7 @@ Completed incrementally during daily use:
 
 ** Phase 8: C# LSP (Roslyn + Unity file watching)
 
-*Requires Unity-permissioned agent.* This agent cannot access Unity
-internals needed to validate LSP attachment and =.sln= generation.
-Full design in =nvim/neovim-csharp-unity-lsp.md=.
+Implementation: =lua/plugins/csharp.lua=.
 
 *** Stack decision
 
@@ -497,72 +495,64 @@ Full design in =nvim/neovim-csharp-unity-lsp.md=.
 |------------------------------------+----------------------------------+--------------------|
 | =seblyng/roslyn.nvim=              | C# LSP, multi-solution mgmt      | Required           |
 | =khoido2003/roslyn-filewatch.nvim= | Unity-aware file watching        | Required for Unity |
-| =bosvik/roslyn-diagnostics.nvim=   | On-demand workspace diagnostics  | Optional           |
-| =stevearc/overseer.nvim=           | Async build tasks → quickfix     | Optional           |
+| =bosvik/roslyn-diagnostics.nvim=   | On-demand workspace diagnostics  | Optional (deferred)|
+| =stevearc/overseer.nvim=           | Async build tasks → quickfix     | Optional (deferred)|
 
 Use *upstream* =seblyng/roslyn.nvim=. The Unity-focused fork enables
 preprocessor branch dimming by default — this is explicitly unwanted for
 cross-platform package code that targets many platforms simultaneously.
 Do NOT use OmniSharp (abandoned, memory leaks).
 
+*** Solution discovery (validated against HandExtensibility)
+
+=broad_search= walks UP from the =.cs= file looking for =.sln= files.
+This works when editing inside a test project (the =.sln= is an ancestor),
+but *fails for package source*: package repos (=com.unity.xr.hands/=,
+=xr.sdk.openxr/=, etc.) are siblings of =TestProjects/=, not children.
+Walking up from package source never encounters a =.sln=.
+
+Additionally, there are 16+ =.sln= files on disk including CI recipe
+solutions, native plugin build solutions, vendored Android NDK solutions,
+and Library/PackageCache solutions. Only the test project =.sln= files
+(=HandExtensibility2.sln=, =AI_UserResearch_Apr7.sln=, etc.) are correct
+targets — the generated =.csproj= files in those projects reference the
+package source via absolute =<Compile Include>= paths.
+
+*Solution*: custom =choose_target= + =ignore_target= callbacks in
+=csharp.lua= that:
+
+1. =ignore_target=: filters out noise =.sln= files matching =Tools/CI/=,
+   =artifacts/=, =Library/=, =NativePlugin~/=, =Submodules~/=,
+   =build.gen.sln=, and =*-ReadOnly/= paths.
+
+2. =choose_target=: after filtering, uses the session override
+   (=vim.g.rb_roslyn_workspace=, set via =:RoslynWorkspace= picker) if
+   available; otherwise auto-selects if only one target remains, or
+   prompts if multiple. For the package source case (zero targets from
+   =broad_search=), scans =TestProjects/= under the workspace root
+   (=.projectile= marker) for =.sln= files.
+
+3. =:RoslynWorkspace= command (=<leader>cs=): interactive picker listing
+   discovered =.sln= files under =TestProjects/=; stores the selection
+   in the session variable and restarts the LSP client.
+
 *** Mason setup
 
-Add the community registry to pick up Roslyn:
+Community registry required — Roslyn is not in Mason's core registry:
 
 #+begin_src lua
-require("mason").setup({
-  registries = {
-    "github:mason-org/mason-registry",
-    "github:Crashdummyy/mason-registry",
-  },
-})
-#+end_src
-
-Then =:MasonInstall roslyn=.
-
-*** Plugin config (=lua/plugins/csharp.lua=)
-
-#+begin_src lua
-return {
-  {
-    "seblyng/roslyn.nvim",
-    ft = "cs",
-    opts = {
-      broad_search  = true,    -- walk upward to find .sln in hermetic dir
-      lock_target   = false,   -- allow switching between solutions
-      filewatching  = "off",   -- CRITICAL: default causes perf drop on Unity
-    },
-  },
-  {
-    "khoido2003/roslyn-filewatch.nvim",
-    ft = { "cs" },
-    opts = {
-      preset = "auto",           -- auto-detects Unity, applies optimized settings
-      client_names = { "roslyn" },
-      deferred_loading = true,   -- wait until first .cs file is opened
-      diagnostic_throttling = {
-        enabled      = true,
-        debounce_ms  = 500,
-        visible_only = true,     -- only request diagnostics for visible buffers
-      },
+{
+  "mason-org/mason.nvim",
+  opts = {
+    registries = {
+      "github:mason-org/mason-registry",
+      "github:Crashdummyy/mason-registry",
     },
   },
 }
 #+end_src
 
-Optionally, limit background analysis scope to avoid Roslyn crashes on
-large Unity solutions:
-
-#+begin_src lua
-vim.lsp.config("roslyn", {
-  settings = {
-    ["csharp|background_analysis"] = {
-      dotnet_analyzer_diagnostics_scope  = "openFiles",
-      dotnet_compiler_diagnostics_scope  = "fullSolution",
-    },
-  },
-})
-#+end_src
+Then =:MasonInstall roslyn=.
 
 *** .sln / .csproj generation
 
@@ -584,25 +574,26 @@ Batch-mode regeneration (no UI):
   -projectPath /path/to/project -quit
 #+end_src
 
-*** Open questions for the Unity agent
+*** Debugging
 
-1. *=choose_target= / =ignore_target= logic*: given the hermetic directory
-   (multiple repos, each with its own =.sln=), does =broad_search= pick the
-   right solution, or is a custom Lua predicate needed? Test with a real
-   =.cs= file from one of the test projects and verify via =:checkhealth roslyn=.
+Keep Rider. Unity nvim-dap is possible but painful given Rider is
+already in the workflow. Reference if ever needed:
+https://www.ownself.org/2025/setup-neovim-for-unity-development.html
 
-2. *=dotnet_analyzer_diagnostics_scope=*: start with =openFiles= for analyzer
-   scope and =fullSolution= for compiler scope. Tune if Roslyn pegs the CPU.
+*** Background analysis scope
 
-3. *Debugging*: keep Rider. Unity nvim-dap is possible but painful given
-   Rider is already in the workflow. Reference if ever needed:
-   https://www.ownself.org/2025/setup-neovim-for-unity-development.html
+Start with =openFiles= for analyzer scope and =fullSolution= for
+compiler scope. Tune if Roslyn crashes or pegs the CPU on large Unity
+solutions. Configure via =vim.lsp.config("roslyn", { settings = ... })=
+if needed.
 
 *** Sign-off
 - [ ] =:MasonInstall roslyn= completes without errors
 - [ ] =roslyn-filewatch.nvim= installed; =:checkhealth roslyn_filewatch= clean
-- [ ] Opening a =.cs= file attaches Roslyn to the correct =.sln=
-- [ ] =:RoslynEngineInfo= shows Unity mode active
+- [ ] Opening a =.cs= in a test project attaches Roslyn to the correct =.sln=
+- [ ] Opening a =.cs= in a package repo attaches to the test project =.sln=
+- [ ] =:RoslynWorkspace= picker shows discovered =.sln= files, switching works
+- [ ] =ignore_target= filters out CI/recipes/native =.sln= files
 - [ ] Go-to-definition navigates to a =UnityEngine= type
 - [ ] Diagnostics appear for a deliberate type error
 - [ ] No perf drop during normal Unity Editor operation (file watching OK)
@@ -617,6 +608,13 @@ defaults is sufficient for now. If umbrella-scoped file-finding becomes
 necessary (e.g. after moving CWD frequently), implement the =.projectile=
 walk logic from the spec above.
 
+** UI thread hang on first =.cs= file open
+
+Opening the first =.cs= file in a session causes a noticeable UI hang
+(Neovide freezes briefly). Likely =find_solutions_broad= doing a
+recursive directory scan synchronously in the =root_dir= callback.
+Investigate whether the scan can be deferred or cached.
+
 ** C++ LSP (clangd)
 
 Not yet evaluated. NativePlugin~ work may benefit, but Rider also
@@ -626,6 +624,16 @@ handles C++. Revisit if Neovim becomes the primary editor for NativePlugin work.
 
 Neogit only. If Neogit's UX is missing something, install
 =kdheepak/lazygit.nvim= and bind to =SPC g G=. No rush.
+
+** Remove Mason dependency for Roslyn
+
+Mason's community registry works but adds an indirection layer.
+=roslyn.nvim= supports a =config.exe_path= option for a manually-managed
+binary. Switch to downloading the Roslyn LSP directly from NuGet
+(=Microsoft.CodeAnalysis.LanguageServer=) or the Microsoft VS Marketplace
+artifact, managed via a shell script or Makefile. This removes the
+Crashdummyy registry dependency and gives direct control over the server
+version.
 
 ** Variable-pitch prose font
 
