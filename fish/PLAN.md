@@ -247,11 +247,11 @@ Move from single-line to two-line layout. Add `fish_right_prompt`. Make
 
 ### Sign-off
 
-- [ ] Prompt renders on two lines: status line (line 1) + symbol line (line 2)
-- [ ] Right prompt shows command duration after commands exceeding the threshold
-- [ ] Right prompt shows `N`/`I`/`R`/`V` reflecting current vi mode
-- [ ] Non-zero exit code displays before the prompt symbol on line 2
-- [ ] `fish_mode_prompt` no longer renders inline
+- [x] Prompt renders on two lines: status line (line 1) + symbol line (line 2). Note: existing prompt was already two-line; only the error-code position changed.
+- [x] Right prompt shows command duration above the 1s threshold (e.g. `[2.5s]`, `[1m 5s]`, `[1h 2m 3s]`)
+- [x] Right prompt shows `N`/`I`/`R`/`V` reflecting current vi mode when vi keybindings active
+- [x] Non-zero exit code displays before the prompt symbol on line 2 (e.g. `[1] ❯`)
+- [x] `fish_mode_prompt` is a no-op (returns empty)
 - [ ] User sign-off
 
 ---
