@@ -282,12 +282,14 @@ The renderer (`functions/fish_prompt.fish`, rewritten in Diff 5) reads
 
 ### Sign-off
 
-- [ ] In a deep cwd, parents render as single-char-plus-leading-dot
-- [ ] Git base directory renders in full
-- [ ] cwd basename renders in full and bolded
-- [ ] `.config` truncates to `.c` not `c`
-- [ ] `_rb_prompt_pwd` updates on `cd` (verified by inspecting the var)
-- [ ] User sign-off
+- [x] In a deep cwd, parents render as single-char-plus-leading-dot (verified `/opt/UnitySrc/repos/rybalt/.claude/worktrees/clever-hawking-6bb367/fish/conf.d` → `/o/U/r/r/.c/w/clever-hawking-6bb367/f/conf.d`)
+- [x] Git base directory renders in full when nested below it
+- [x] cwd basename renders in full and bolded (ANSI `\x1b[1m...\x1b[22m`)
+- [x] `.config` truncates to `.c` not `c`
+- [x] `_rb_prompt_pwd` updates on `cd` (variable handler `--on-variable PWD` confirmed firing)
+- [x] cwd-is-git-root case works (basename bolded as cwd)
+- [x] Slashes are dimmed (`\x1b[2m/\x1b[22m`)
+- [ ] User sign-off (test in real terminal)
 
 ---
 

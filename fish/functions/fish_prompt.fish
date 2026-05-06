@@ -17,8 +17,11 @@ function fish_prompt --description 'Two-line prompt: status line + symbol line'
         set suffix '#'
     end
 
+    # Compute PWD on first render if the PWD-change watcher hasn't fired.
+    set --query _rb_prompt_pwd; or _rb_prompt_pwd
+
     # Line 1: [login] cwd vcs
-    echo -s (prompt_login) ' ' $cwd_color (prompt_pwd) $vcs_color (fish_vcs_prompt) $normal
+    echo -s (prompt_login) ' ' $cwd_color $_rb_prompt_pwd $normal ' ' $vcs_color (fish_vcs_prompt) $normal
 
     # Line 2: [error-code] symbol
     if test $last_status -ne 0
