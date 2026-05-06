@@ -20,8 +20,11 @@ function fish_prompt --description 'Two-line prompt: status line + symbol line'
     # Compute PWD on first render if the PWD-change watcher hasn't fired.
     set --query _rb_prompt_pwd; or _rb_prompt_pwd
 
-    # Line 1: [login] cwd vcs
-    echo -s (prompt_login) ' ' $cwd_color $_rb_prompt_pwd $normal ' ' $vcs_color (fish_vcs_prompt) $normal
+    # Line 1: [login] cwd git
+    # The git block ($$_rb_prompt_git_var) is set asynchronously by
+    # _rb_prompt_run in conf.d/rb-prompt.fish. May be empty (not in a
+    # git repo, or the first subshell hasn't completed yet).
+    echo -s (prompt_login) ' ' $cwd_color $_rb_prompt_pwd $normal ' ' $vcs_color $$_rb_prompt_git_var $normal
 
     # Line 2: [error-code] symbol
     if test $last_status -ne 0

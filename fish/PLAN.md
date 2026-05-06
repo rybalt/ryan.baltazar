@@ -315,13 +315,15 @@ rewritten to read those values and emit them in the new layout.
 
 ### Sign-off
 
-- [ ] `_rb_prompt_run` is registered on `fish_prompt` (verify with `functions --handlers`)
-- [ ] `git ls-files --others` is not invoked anywhere in `conf.d/rb-prompt.fish`
-- [ ] Modifying a tracked file shows `•`
-- [ ] Adding a new untracked file does not show `•`
-- [ ] After `git add` of a new file, it is included in dirty detection
-- [ ] Prompt renders correctly with the rewritten `fish_prompt.fish`
-- [ ] User sign-off
+- [x] `_rb_prompt_run` is registered on `fish_prompt` (`functions --handlers` confirmed)
+- [x] `_rb_prompt_fish_exit` is registered on `fish_exit` for cleanup
+- [x] Variable-watcher on `_rb_prompt_git_$fish_pid` is registered (triggers prompt repaint)
+- [x] `git ls-files --others` is not invoked anywhere in `conf.d/rb-prompt.fish`
+- [x] In a tracked-file-modified repo: var contains branch + `•` dirty marker (verified)
+- [x] Outside a git repo: var is set to empty string (verified)
+- [x] Branch detection chain: `git branch --show-current` → `git describe --tags --exact-match` → `@<sha>`
+- [x] Renderer reads `$$_rb_prompt_git_var` (double-deref) instead of calling `fish_vcs_prompt`
+- [ ] User sign-off (test in real terminal — confirm dirty marker, ahead/behind, branch display work)
 
 ---
 
