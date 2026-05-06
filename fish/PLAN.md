@@ -1,71 +1,71 @@
 # Fish Prompt — Implementation Plan
 
-Layer custom behavior on top of vendored [Hydro](https://github.com/jorgebucaran/hydro)
-to handle long namespaced branch names, deep cwds, and large monorepos
-without blocking the prompt — while preserving the ability to merge upstream
-hydro changes.
+Build a self-owned fish prompt that handles long namespaced branch names,
+deep cwds, and large monorepos without blocking the prompt. No upstream
+prompt-plugin dependency; portable to a fresh machine via `clone + symlink`.
 
 ## Goals
 
 1. Sync fish config into the rybalt personal-config repo, alongside `nvim/` and `emacs/`.
 2. Always-on path truncation: parents to single chars, leading-dot preserved.
 3. Dynamic branch and git-base truncation when the status line exceeds 120 chars.
-4. Fast prompts in monorepos: drop untracked enumeration, cache HEAD/index state, throttle background fetch.
+4. Fast prompts in monorepos: skip untracked enumeration, cache HEAD/index state, throttle background fetch.
 5. Useful indicators: worktree, in-progress git state, ahead/behind, host context (SSH / nix-shell / container).
 6. Multi-line layout: status line on top, prompt symbol on next line; vi-mode and command duration on the right prompt.
-7. **Minimize fork surface** — hydro.fish stays as a near-pristine vendored copy. Our customizations live in a separate file that overrides exactly one upstream function.
+7. **Self-contained** — no Hydro/fisher entanglement. Bootstrap is `clone rybalt → symlink ~/.config/fish → done`.
 
-## Architecture: layer on top of hydro
+## Architecture: self-owned, no upstream prompt plugin
 
-Hydro's prompt has four moving parts:
+We previously planned to fork Hydro. Two issues surfaced during Diff 2
+implementation that made that plan untenable:
 
-| Component | Function | Owned by |
-|-----------|----------|----------|
-| PWD formatting (string-only) | `_hydro_pwd` | hydro.fish — kept pristine |
-| Async git data collection | `_hydro_prompt` | **the one fork point** — overridden by `_rb_prompt_run` |
-| Cmd-duration / postexec tracking | `_hydro_postexec` | hydro.fish — kept pristine |
-| Color/symbol var setup | inline at end of hydro.fish | hydro.fish — kept pristine |
+1. **The existing `fish_prompt.fish` doesn't use Hydro.** It calls fish's
+   built-in `prompt_pwd` and `fish_vcs_prompt`, ignoring the
+   `$_hydro_pwd` / `$$_hydro_git` / `$_hydro_status` variables Hydro
+   computes. Hydro was loaded but unused — the actual prompt is fish's
+   default-style.
+2. **Hydro's plugin source ships our renderer.** Hydro provides
+   `functions/fish_prompt.fish` and `functions/fish_mode_prompt.fish`,
+   not just `conf.d/hydro.fish`. Fisher's update logic is `cp -RLf`
+   (unconditional overwrite), so any `fisher update` would clobber our
+   customized renderer (Diff 3+) and vi-mode neutralizer.
 
-The *renderer* (`fish_prompt.fish`) was never part of hydro.fish — it was
-already in `~/.config/fish/functions/`, owned by us. So all visual layout
-changes (multiline, right-prompt, host indicator, dynamic truncation) live in
-our owned `fish_prompt.fish` / `fish_right_prompt.fish`.
+The pragmatic fix is to drop Hydro entirely. The 70-80 lines of fish that
+provide value (PWD truncation regex, async git subshell, postexec duration
+tracking) get written directly into our own `conf.d/rb-prompt.fish`. We own
+the whole stack.
 
-`conf.d/rb-prompt.fish` is our override layer:
+Component map after the redo:
+
+| Component | Lives in | Notes |
+|-----------|----------|-------|
+| Renderer | `functions/fish_prompt.fish` | Reads vars set by `rb-prompt.fish`; assembles status line + handles prompt symbol on line 2 |
+| Right prompt | `functions/fish_right_prompt.fish` | Cmd duration + vi-mode letter (NEW in Diff 3) |
+| Vi-mode hook | `functions/fish_mode_prompt.fish` | No-op (Diff 3) |
+| Async git data collection | `conf.d/rb-prompt.fish` | `_rb_prompt_run --on-event fish_prompt` (Diff 5) |
+| PWD formatting | `conf.d/rb-prompt.fish` | `_rb_prompt_pwd --on-variable PWD` (Diff 4) |
+| Postexec / cmd duration | `conf.d/rb-prompt.fish` | `_rb_prompt_postexec --on-event fish_postexec` (Diff 3) |
+| Color/symbol defaults | `conf.d/rb-prompt.fish` | Set at end of file (Diff 3 onward) |
+
+`fisher` itself stays installed (`jorgebucaran/fisher` remains in
+`fish_plugins`) for future plugin needs unrelated to the prompt. No prompt
+plugin is installed; the prompt is entirely our own files.
+
+### Bootstrap on a new machine
 
 ```fish
-# Erase hydro's prompt event handler so ours takes over.
-functions --erase _hydro_prompt
-
-# Our replacement: same shape as _hydro_prompt, but with caching,
-# untracked-disabled, throttled fetch, and worktree-aware in-progress detection.
-function _rb_prompt_run --on-event fish_prompt
-    # ...
-end
+# 1. Install fish (brew install fish, or apt, etc.)
+# 2. Bootstrap fisher (one-time, for future plugins)
+curl -sL https://git.io/fisher | source && fisher install jorgebucaran/fisher
+# 3. Clone rybalt
+git clone <rybalt-url> /opt/UnitySrc/repos/rybalt
+# 4. Symlink fish config
+ln -s /opt/UnitySrc/repos/rybalt/fish ~/.config/fish
+# 5. Open a new shell. Done — prompt works offline thereafter.
 ```
 
-When upstream hydro improves things outside `_hydro_prompt` (PWD logic,
-postexec, var defaults), we sync `hydro.fish` and inherit them automatically.
-When upstream changes `_hydro_prompt` itself, we manually port relevant
-changes to `_rb_prompt_run`.
-
-### Upstream sync procedure
-
-`conf.d/hydro.fish` carries a header:
-
-```fish
-# Vendored from https://github.com/jorgebucaran/hydro/blob/main/conf.d/hydro.fish
-# Last synced: 2026-05-05
-# Upstream commit: <sha>
-#
-# Update with:
-#   curl -L https://raw.githubusercontent.com/jorgebucaran/hydro/main/conf.d/hydro.fish \
-#     -o fish/conf.d/hydro.fish
-# Then bump the date and commit sha above.
-```
-
-Manual sync, no automation — fish prompt code changes rarely enough to not
-warrant tooling.
+No `fisher install` is required for the prompt itself; everything ships in
+the rybalt repo.
 
 ## Workflow
 
@@ -121,15 +121,15 @@ Dropped: untracked counting, branchless smartlog integration, detached-HEAD subj
 ├── .gitignore                   # ignores fish_variables
 ├── PLAN.md                      # this file
 ├── config.fish
-├── fish_plugins                 # fisher only (hydro removed)
+├── fish_plugins                 # jorgebucaran/fisher only (no prompt plugin)
 ├── completions/
+│   └── fisher.fish
 ├── conf.d/
-│   ├── hydro.fish               # vendored from upstream, near-pristine
-│   ├── rb-prompt.fish           # our override layer
-│   └── rustup.fish
+│   ├── rb-prompt.fish           # data collection + PWD format + postexec + defaults
+│   └── rustup.fish              # rustup completion (unrelated)
 ├── functions/
-│   ├── fish_prompt.fish         # owned by us, full rewrite for new layout
-│   ├── fish_right_prompt.fish   # NEW — duration + vi-mode
+│   ├── fish_prompt.fish         # renderer
+│   ├── fish_right_prompt.fish   # cmd duration + vi-mode (NEW in Diff 3)
 │   ├── fish_mode_prompt.fish    # no-op stub
 │   └── fisher.fish
 └── themes/
@@ -173,30 +173,59 @@ location with a symlink. No prompt behavior changes.
 
 ---
 
-## Diff 2: Vendor hydro + scaffold override layer
+## Diff 2: Drop hydro entirely; scaffold rb-prompt
 
-Stop fisher from managing hydro (so we can edit it freely), add an
-upstream-tracking header to `conf.d/hydro.fish`, and create an empty
-`conf.d/rb-prompt.fish` for future overrides. No behavior change.
+Hydro is removed from `fish_plugins`, the vendored `conf.d/hydro.fish` is
+deleted, and `conf.d/rb-prompt.fish` is created as an empty scaffold for
+future data-collection logic. The renderer (`functions/fish_prompt.fish`)
+and vi-mode handler (`functions/fish_mode_prompt.fish`) stay as they are —
+they were already user-customized and don't depend on Hydro.
+
+**Why drop instead of fork** — see [Architecture](#architecture-self-owned-no-upstream-prompt-plugin)
+section. Two reasons in short: the existing `fish_prompt.fish` doesn't read
+Hydro's data, and Hydro's plugin source ships our renderer files (so any
+`fisher update` would clobber Diff 3+).
 
 **Files**
 - Modify: `fish/fish_plugins` — remove `jorgebucaran/hydro`, keep `jorgebucaran/fisher`
-- Modify: `fish/conf.d/hydro.fish` — prepend a header with upstream URL, current commit sha, last-sync date, and update procedure (see Architecture section)
-- New: `fish/conf.d/rb-prompt.fish` — initially just a header comment describing its role; no logic yet
+- Delete: `fish/conf.d/hydro.fish`
+- New (or revised): `fish/conf.d/rb-prompt.fish` — empty scaffold with a doc comment; no logic yet
+
+**One-time runtime steps** (user runs in any fish session):
+
+```fish
+# Remove hydro from fisher's plugin tracking (matches the manifest)
+set -U _fisher_plugins jorgebucaran/fisher
+
+# Erase fisher's per-plugin file ownership record for hydro
+set -e _fisher_jorgebucaran_2F_hydro_files
+```
+
+These can't be done in code — they update fish universal variables, which
+are machine-local interactive state.
 
 **Notes**
-- After this diff, `fisher update` will not touch hydro (not in manifest).
-- The hydro source itself is unchanged — same identifiers, same logic.
-- `rb-prompt.fish` loads after hydro alphabetically (`h` < `r`), so future overrides will see hydro's definitions in scope.
+- No prompt plugin is now installed. The prompt is entirely our own files.
+- `jorgebucaran/fisher` stays for future plugin needs (none today).
+- `functions/fish_prompt.fish` and `functions/fish_mode_prompt.fish` were
+  originally installed by fisher as part of hydro, but fisher's tracking
+  of them is removed by the second `set -e` above. We own them outright.
+- `_rb_prompt_run` (Diff 5) and `_rb_prompt_pwd` (Diff 4) will be written
+  from scratch into `rb-prompt.fish` — equivalents of Hydro's logic but
+  fully under our control.
 
 ### Sign-off
 
 - [ ] `jorgebucaran/hydro` removed from `fish_plugins`
 - [ ] `jorgebucaran/fisher` retained in `fish_plugins`
-- [ ] `conf.d/hydro.fish` has upstream-tracking header but otherwise unchanged
-- [ ] `conf.d/rb-prompt.fish` exists and loads cleanly (even though empty of logic)
-- [ ] New shell renders the prompt visually identical to before
-- [ ] `fisher update` does not reinstall or modify hydro
+- [ ] `fish/conf.d/hydro.fish` does not exist
+- [ ] `fish/conf.d/rb-prompt.fish` exists with doc comment + `status is-interactive || exit`
+- [ ] New fish shell loads conf.d without errors
+- [ ] User has run `set -U _fisher_plugins jorgebucaran/fisher`
+- [ ] User has run `set -e _fisher_jorgebucaran_2F_hydro_files`
+- [ ] `fisher list` reports only `jorgebucaran/fisher`
+- [ ] `set --names | rg '_fisher_.*hydro'` returns nothing (regex must be quoted; `*` is a fish glob)
+- [ ] User-visible: prompt renders identically to Diff 1 (since the existing renderer didn't use Hydro anyway)
 - [ ] User sign-off
 
 ---
@@ -227,56 +256,69 @@ Move from single-line to two-line layout. Add `fish_right_prompt`. Make
 
 ---
 
-## Diff 4: Path truncation defaults
+## Diff 4: PWD formatter and path truncation
 
-Set `fish_prompt_pwd_dir_length=1` and verify Hydro's existing leading-dot
-regex preserves dotted-dir prefixes correctly.
+Implement `_rb_prompt_pwd --on-variable PWD` in `conf.d/rb-prompt.fish`.
+This computes a formatted PWD string into `$_rb_prompt_pwd` whenever the
+current directory changes. Honors `fish_prompt_pwd_dir_length=1` for parent
+shrinking, preserves leading dots, keeps the git-base directory full, and
+bolds the cwd basename.
+
+The renderer (`functions/fish_prompt.fish`, rewritten in Diff 5) reads
+`$_rb_prompt_pwd` instead of calling fish's `prompt_pwd`.
 
 **Files**
-- Modify: `fish/config.fish` (export `fish_prompt_pwd_dir_length=1`)
-- Verify: existing regex `(\.?[^/]{N})[^/]*/` in `rb-prompt.fish` correctly preserves `.config` → `.c`
+- Modify: `fish/conf.d/rb-prompt.fish` — define `_rb_prompt_pwd` and the variable handler
+- Modify: `fish/config.fish` — export `fish_prompt_pwd_dir_length=1`
 
 **Notes**
-- Hydro's regex already preserves a leading `.`, so likely no regex change required. Verify against test cases:
-  - `.config` → `.c`
+- The truncation regex is `(\.?[^/]{N})[^/]*/` — match leading-dot-optional + N chars, replace any further chars before `/`. Verified against test cases:
+  - `.config` → `.c` (leading dot preserved, then 1 char)
   - `Code` → `C`
-  - `com.unity.xr.hands` → `c` (since `.` only counts as leading)
-  - `..hidden` → `.h` (leading dot, second dot literal)
+  - `..hidden` → `.h` (leading dot, second dot is the 1 char)
+- Git base directory is detected via `git rev-parse --show-toplevel`. If the cwd is inside a git repo, the basename of that path is preserved verbatim.
+- cwd basename gets ANSI bold (`\x1b[1m...\x1b[22m`).
+- Logic conceptually similar to Hydro's `_hydro_pwd` (good reference) but written fresh — no `_hydro_*` symbols.
 
 ### Sign-off
 
 - [ ] In a deep cwd, parents render as single-char-plus-leading-dot
-- [ ] Git base directory still renders in full (Hydro's existing behavior preserved)
-- [ ] cwd basename still renders in full and bolded
+- [ ] Git base directory renders in full
+- [ ] cwd basename renders in full and bolded
 - [ ] `.config` truncates to `.c` not `c`
+- [ ] `_rb_prompt_pwd` updates on `cd` (verified by inspecting the var)
 - [ ] User sign-off
 
 ---
 
-## Diff 5: Install `_rb_prompt_run` override; drop untracked detection
+## Diff 5: Implement async git data collection
 
-Erase hydro's `_hydro_prompt` event handler and register our own
-`_rb_prompt_run --on-event fish_prompt`. The replacement is a copy of
-`_hydro_prompt`'s body with the `git ls-files --others --exclude-standard`
-block removed. This establishes the override pattern; later diffs (6, 7) extend
-this same function.
+Define `_rb_prompt_run --on-event fish_prompt` in `conf.d/rb-prompt.fish`.
+This is the data-collection layer: kick off a backgrounded `fish --private`
+subshell that reads `branch`, `dirty (tracked-only)`, and `ahead/behind`,
+writing the formatted result to a per-pid universal variable that triggers
+prompt repaint.
+
+This is also the diff where the renderer (`functions/fish_prompt.fish`) is
+rewritten to read those values and emit them in the new layout.
 
 **Files**
-- Modify: `fish/conf.d/rb-prompt.fish` — add `functions --erase _hydro_prompt` and define `_rb_prompt_run`
+- Modify: `fish/conf.d/rb-prompt.fish` — define `_rb_prompt_run`, the per-pid var, and the variable-watcher that triggers repaint
+- Modify: `fish/functions/fish_prompt.fish` — rewrite to consume the new vars (replaces fish-default `prompt_pwd` / `fish_vcs_prompt` calls)
 
 **Notes**
-- This is the **only** point where we copy logic from upstream hydro. All other diffs either work in our own files (`fish_prompt.fish` etc.) or extend `_rb_prompt_run`.
-- New (untracked) files no longer trigger the `•` indicator. User confirmed acceptable.
-- `_rb_prompt_run` continues to write to the per-pid universal var `$_hydro_git` so the existing repaint trigger and `fish_prompt.fish` reading logic both keep working untouched.
+- Logic lifted in spirit from Hydro's `_hydro_prompt` (good reference for fish async patterns) but written from scratch — no `_hydro_*` symbols.
+- Untracked files are not detected (Hydro's `git ls-files --others` block is *not* ported). User confirmed acceptable.
+- Pattern: per-pid universal var `_rb_prompt_git_$fish_pid` holds the formatted git string. A variable-watcher on that name calls `commandline --function repaint` to refresh the prompt when the async subshell finishes.
 
 ### Sign-off
 
-- [ ] `_hydro_prompt` is no longer registered as an event handler (verify with `functions --handlers`)
-- [ ] `_rb_prompt_run` is registered on `fish_prompt`
-- [ ] `git ls-files --others` is no longer invoked from the prompt code path (verify by reading `_rb_prompt_run` body)
+- [ ] `_rb_prompt_run` is registered on `fish_prompt` (verify with `functions --handlers`)
+- [ ] `git ls-files --others` is not invoked anywhere in `conf.d/rb-prompt.fish`
 - [ ] Modifying a tracked file shows `•`
 - [ ] Adding a new untracked file does not show `•`
-- [ ] After `git add` of a new file, it is included in dirty detection (since it's now in the index)
+- [ ] After `git add` of a new file, it is included in dirty detection
+- [ ] Prompt renders correctly with the rewritten `fish_prompt.fish`
 - [ ] User sign-off
 
 ---
@@ -313,9 +355,8 @@ worktree-id and mtimes of HEAD, index, and packed-refs. 60s TTL.
 
 ## Diff 7: Throttled background fetch
 
-Inside `_rb_prompt_run`, replace the `for fetch in $hydro_fetch false` loop
-(carried over from upstream) with a time-throttled fetch that runs at most
-once per repo per 10 minutes.
+Inside `_rb_prompt_run`, add a time-throttled background fetch that runs at
+most once per repo per 10 minutes.
 
 **Files**
 - Modify: `fish/conf.d/rb-prompt.fish` — modify the fetch logic inside `_rb_prompt_run`'s subshell command
@@ -345,8 +386,8 @@ state. During rebase, recover the real branch name from
 
 Worktree and in-progress detection happen inside `_rb_prompt_run`'s subshell
 (it has `git rev-parse --git-dir` and filesystem access already). The
-detected state writes into the same `$_hydro_git` universal var, prefixed/suffixed
-into the formatted git string. No changes to `fish_prompt.fish`.
+detected state writes into the same `$_rb_prompt_git_$fish_pid` universal var,
+prefixed/suffixed into the formatted git string. No changes to `fish_prompt.fish`.
 
 **Files**
 - Modify: `fish/conf.d/rb-prompt.fish` — extend `_rb_prompt_run` subshell to detect worktree and in-progress state, fold into output string
@@ -442,7 +483,10 @@ Resolved: Option A (worktree path during dev, re-point to main after merge).
 Universal vars are fish-native and survive shell restarts. Tmpfs file is
 simpler to invalidate and inspect. Decide at Diff 6.
 
-### DQ: Renaming hydro identifiers? `RESOLVED`
+### DQ: Hydro fork vs. self-owned implementation? `RESOLVED`
 
-Resolved: do not rename. Keep `conf.d/hydro.fish` near-pristine to allow
-upstream merges. Customizations live in `conf.d/rb-prompt.fish` as a layer.
+Resolved during Diff 2 implementation: drop Hydro entirely. The original
+"layer on top of Hydro" approach was untenable because (1) the existing
+`fish_prompt.fish` didn't actually read Hydro's data, and (2) Hydro's
+plugin source ships our renderer files, which `fisher update` would clobber
+unconditionally. Self-owned is the only safe path.
