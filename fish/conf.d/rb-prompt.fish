@@ -39,6 +39,7 @@ function _rb_prompt_pwd --on-variable PWD --on-variable fish_prompt_pwd_dir_leng
     set -l git_root (command git --no-optional-locks rev-parse --show-toplevel 2>/dev/null)
     set --global _rb_prompt_git_root $git_root
     set -l git_base (string replace --all --regex -- "^.*/" "" "$git_root")
+    set --global _rb_prompt_pwd_base $git_base
     set -l path_sep /
 
     test "$fish_prompt_pwd_dir_length" = 0; and set path_sep
@@ -204,6 +205,57 @@ function _rb_prompt_host
 
     test (count $parts) -gt 0
         and printf '[%s] ' (string join '][' $parts)
+end
+
+# --- Dynamic 120-char budget compressors --------------------------------------
+#
+# Both functions take a string (formatted PWD or formatted git block) and
+# return a shrunk version. They're called by fish_prompt only when the
+# assembled status line exceeds $rb_prompt_max_width. Compression order:
+#   1. Shrink the git-base segment in the PWD (dot/hyphen-aware)
+#   2. Middle-ellipsize the branch (preserves leaf segment)
+#   3. Accept overflow
+
+# Dot/hyphen-aware shrink of the git-base segment in a formatted PWD string.
+# Examples:
+#   com.unity.xr.hands  -> c.u.x.h
+#   clever-hawking-6bb  -> c-h-6
+#   simplename          -> s
+function _rb_prompt_compress_pwd_base
+    set -l pwd $argv[1]
+
+    # No base recorded -> nothing to shrink.
+    if not set --query _rb_prompt_pwd_base[1]; or test -z "$_rb_prompt_pwd_base"
+        echo $pwd
+        return
+    end
+
+    set -l shrunk (string replace --regex --all '([^.\-])[^.\-]+' '$1' $_rb_prompt_pwd_base)
+    string replace -- $_rb_prompt_pwd_base $shrunk $pwd
+end
+
+# Middle-ellipsize the branch portion of a formatted git block string.
+# The branch is the leading token, ending at the first space or dirty marker.
+# Only applies when the branch has 3+ slash-separated segments.
+#   rybalt/hand-extensibility/050-foo [wt:repo]• ↑2
+#     -> rybalt/…/050-foo [wt:repo]• ↑2
+function _rb_prompt_compress_branch
+    set -l git $argv[1]
+
+    set -l branch_part (string match --regex -- '^[^ •]+' $git)
+    if test -z "$branch_part"
+        echo $git
+        return
+    end
+
+    set -l segments (string split / $branch_part)
+    if test (count $segments) -lt 3
+        echo $git
+        return
+    end
+
+    set -l shrunk_branch "$segments[1]/…/$segments[-1]"
+    string replace -- $branch_part $shrunk_branch $git
 end
 
 # Symbol defaults — overridable via universal vars.

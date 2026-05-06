@@ -428,8 +428,8 @@ git-base shrink → branch middle-ellipsize → overflow.
 - Modify: `fish/conf.d/rb-prompt.fish` (post-process `_rb_prompt_pwd` and branch string before assigning to universal vars)
 
 **Notes**
-- Visible width measurement: strip ANSI escapes, then `string length`.
-- Budget: 120 chars on line 1 only (status line). Configurable via `rb_prompt_max_width`.
+- Visible width measurement: `string length --visible` (fish builtin, handles ANSI).
+- Budget: defaults to `$COLUMNS` (terminal width, auto-updated by fish on SIGWINCH) with a floor of 80 chars so narrow split panes don't over-compress. Explicit `$rb_prompt_max_width` overrides everything (including the floor — opt-in if you want it tighter).
 - Compression algorithm:
   1. Render full version. Measure.
   2. If over budget: shrink git-base segment dot-aware (`com.unity.xr.hands` → `c.u.x.h`). Re-measure.
@@ -441,14 +441,17 @@ git-base shrink → branch middle-ellipsize → overflow.
 
 ### Sign-off
 
-- [ ] Short branch + short cwd, under budget: status line renders full
-- [ ] Short branch + long cwd, over budget: git-base shrinks dot-aware; branch untouched
-- [ ] Long branch + long cwd, still over after git-base shrink: branch middle-ellipsizes
-- [ ] Truly excessive: line renders without crash, may wrap (overflow accepted)
-- [ ] 2-segment branch over budget: leaf preserved, no middle to ellipsize, overflow accepted
-- [ ] 1-segment branch over budget: no branch compression, overflow accepted
-- [ ] `rb_prompt_max_width=80` overrides the default budget
-- [ ] User sign-off
+- [x] Short branch + short cwd, under budget: status line renders full (verified at 120 budget in this worktree)
+- [x] Short branch + long cwd, over budget: git-base shrinks dot/hyphen-aware; branch untouched (`clever-hawking-6bb367` → `c-h-6` at budget=50)
+- [x] Long branch + long cwd, still over after git-base shrink: branch middle-ellipsizes (`rybalt/hand-extensibility/050-foo` → `rybalt/…/050-foo` at budget=80)
+- [x] Truly excessive: line renders without crash, overflow accepted (verified at budget=60 with 3-segment branch — both compressions applied, line still over budget, no further shrinking attempted)
+- [x] 2-segment branch over budget: leaf preserved, no middle to ellipsize, overflow accepted (verified with `claude/clever-hawking-6bb367` — `string split / | count` returns 2, compressor returns input unchanged)
+- [x] 1-segment branch over budget: no branch compression, overflow accepted
+- [x] `rb_prompt_max_width=80` overrides the default budget (verified — bypasses the 80-char floor too, fully user-controlled)
+- [x] Default budget is `$COLUMNS` with an 80-char floor. Verified: `$COLUMNS=200` → budget 200, `$COLUMNS=60` → budget 80 (floored), `$COLUMNS=unset` → budget 120 (fallback)
+- [x] PWD compressor preserves ANSI styling (bold cwd, dim slashes) since it operates on the rendered string with `string replace`
+- [x] Branch compressor preserves trailing markers (worktree, state, dirty, upstream) — only the leading branch-token is replaced
+- [ ] User sign-off (test in real terminal with a long branch + long cwd that crosses 120 chars)
 
 ---
 
