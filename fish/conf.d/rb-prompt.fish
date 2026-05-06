@@ -32,9 +32,12 @@ function $_rb_prompt_git_var --on-variable $_rb_prompt_git_var
 end
 
 # PWD formatter: leading-dot-aware parent shrinking, git-base preserved,
-# cwd basename bolded, slashes dimmed.
+# cwd basename bolded, slashes dimmed. Also caches the git toplevel into
+# $_rb_prompt_git_root so _rb_prompt_run doesn't have to re-fork git on
+# every prompt.
 function _rb_prompt_pwd --on-variable PWD --on-variable fish_prompt_pwd_dir_length
     set -l git_root (command git --no-optional-locks rev-parse --show-toplevel 2>/dev/null)
+    set --global _rb_prompt_git_root $git_root
     set -l git_base (string replace --all --regex -- "^.*/" "" "$git_root")
     set -l path_sep /
 
@@ -57,28 +60,73 @@ end
 # the formatted result back via the per-pid universal var.
 function _rb_prompt_run --on-event fish_prompt
     # Cancel any subshell still in flight from the previous prompt.
-    command kill $_rb_prompt_last_pid 2>/dev/null
+    # Guarded so we don't fork `kill` on the first prompt of a session.
+    test -n "$_rb_prompt_last_pid"; and command kill $_rb_prompt_last_pid 2>/dev/null
 
-    set -l git_root (command git --no-optional-locks rev-parse --show-toplevel 2>/dev/null)
+    # Bootstrap on first call: PWD is set before our --on-variable handler
+    # is registered, so _rb_prompt_pwd hasn't run yet on a fresh shell.
+    set --query _rb_prompt_git_root; or _rb_prompt_pwd
 
     # Not in a git repo, or path is on the opt-out list — clear the var.
-    if not set --query git_root[1]; or contains -- $git_root $rb_prompt_ignored_paths
+    # set --query var[1] returns failure for an empty list (no git_root).
+    if not set --query _rb_prompt_git_root[1]; or contains -- $_rb_prompt_git_root $rb_prompt_ignored_paths
         set --universal $_rb_prompt_git_var ''
         return
     end
 
     fish --private --command "
-        set branch (
-            command git branch --show-current 2>/dev/null ||
-            command git describe --tags --exact-match HEAD 2>/dev/null ||
-            command git rev-parse --short HEAD 2>/dev/null |
-                string replace --regex -- '(.+)' '@\$1'
-        )
+        set git_dir (command git rev-parse --git-dir 2>/dev/null)
+
+        # Worktree marker. The marker shows the parent repo basename
+        # (not the worktree own name) since the worktree name is already
+        # visible as the bolded git-base in the PWD. Reads as
+        #     branch [wt:repo]
+        # — placed after the branch in the compose step below.
+        set worktree ''
+        if string match --quiet '*/worktrees/*' \$git_dir
+            set common_dir (command git rev-parse --git-common-dir 2>/dev/null)
+            set repo_name (path dirname \$common_dir | path basename)
+            test -n \"\$repo_name\"; and set worktree \" [wt:\$repo_name]\"
+        end
+
+        # In-progress git state via filesystem checks (no extra git invocation).
+        # During rebase, recover the real branch from rebase-merge/head-name
+        # so the prompt shows 'feature ⏸ rebase 3/7' instead of @<sha>.
+        set state ''
+        set state_branch ''
+        if test -d \$git_dir/rebase-merge
+            set state_branch (cat \$git_dir/rebase-merge/head-name 2>/dev/null | string replace --regex '^refs/heads/' '')
+            set msgnum (cat \$git_dir/rebase-merge/msgnum 2>/dev/null)
+            set end_msg (cat \$git_dir/rebase-merge/end 2>/dev/null)
+            set state \" ⏸ rebase \$msgnum/\$end_msg\"
+        else if test -d \$git_dir/rebase-apply
+            set state_branch (cat \$git_dir/rebase-apply/head-name 2>/dev/null | string replace --regex '^refs/heads/' '')
+            set state ' ⏸ rebase'
+        else if test -e \$git_dir/MERGE_HEAD
+            set state ' ⇄ merge'
+        else if test -e \$git_dir/CHERRY_PICK_HEAD
+            set state ' ⇒ cherry-pick'
+        else if test -e \$git_dir/BISECT_LOG
+            set state ' ⇆ bisect'
+        end
+
+        # Branch — prefer rebase head-name when applicable, else fall back
+        # to the symbolic-ref / describe / sha chain.
+        if test -n \"\$state_branch\"
+            set branch \$state_branch
+        else
+            set branch (
+                command git branch --show-current 2>/dev/null ||
+                command git describe --tags --exact-match HEAD 2>/dev/null ||
+                command git rev-parse --short HEAD 2>/dev/null |
+                    string replace --regex -- '(.+)' '@\$1'
+            )
+        end
 
         # Show the branch name immediately if the var is empty (first
         # render in this directory). The rest of the subshell adds dirty
         # and upstream info, then updates with the full string.
-        test -z \"\$$_rb_prompt_git_var\" && set --universal $_rb_prompt_git_var \"\$branch \"
+        test -z \"\$$_rb_prompt_git_var\" && set --universal $_rb_prompt_git_var \"\$branch\$worktree\$state \"
 
         # Dirty check — tracked files only. No untracked enumeration
         # (which is the slow path on monorepos).
@@ -102,7 +150,7 @@ function _rb_prompt_run --on-event fish_prompt
                 set upstream \" $rb_prompt_git_ahead\$ahead $rb_prompt_git_behind\$behind\"
         end
 
-        set --universal $_rb_prompt_git_var \"\$branch\$info\$upstream \"
+        set --universal $_rb_prompt_git_var \"\$branch\$worktree\$state\$info\$upstream \"
     " &
 
     set --global _rb_prompt_last_pid $last_pid

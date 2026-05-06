@@ -327,58 +327,30 @@ rewritten to read those values and emit them in the new layout.
 
 ---
 
-## Diff 6: HEAD/index cache
+## Diff 6: HEAD/index cache `WONTFIX`
 
-Add a cache layer in front of the async subshell inside `_rb_prompt_run`.
-Skip the subshell entirely when cached values are valid. Cache key includes
-worktree-id and mtimes of HEAD, index, and packed-refs. 60s TTL.
+**Resolved during Diff 5 sign-off**: not needed. The cache was designed
+against the original prompt cost, which was dominated by `git ls-files
+--others`. Diff 5 dropped that. The remaining git operations (`rev-parse`,
+`branch --show-current`, `diff-index`, `rev-list`) are all index-only and
+fast even on the unity/unity monorepo. User confirmed the prompt feels
+instant in practice. Cache complexity isn't worth sub-perceptible savings.
 
-**Files**
-- Modify: `fish/conf.d/rb-prompt.fish` — extend `_rb_prompt_run` with cache short-circuit before the `fish --private --command "..." &` call
-
-**Notes**
-- Cache key: `<git-dir-path>:<HEAD-mtime>:<index-mtime>:<packed-refs-mtime>`
-- Stored in fish universal vars or a tmpfs file (`/tmp/rb-prompt-cache-$USER`)?
-  Decide at implementation time; lean toward universal vars for simplicity.
-- Worktree-aware because `git rev-parse --git-dir` returns
-  `.git/worktrees/<name>` for worktrees, distinct per worktree.
-- TTL is a backstop for vectors we don't catch (e.g., user manually edits
-  refs, branchless rewrites history). 60s is a starting point; revisit if
-  staleness shows up in practice.
-
-### Sign-off
-
-- [ ] Within 60s in the same repo with no git state change, prompt does not spawn the async subshell
-- [ ] After `git checkout`, cache invalidates and a new subshell runs
-- [ ] After `git add`, cache invalidates (index mtime changed)
-- [ ] After `git fetch`, cache invalidates (packed-refs mtime changed)
-- [ ] In two worktrees of the same repo, cache entries are independent
-- [ ] User sign-off
+If perf becomes a problem in some future scenario, this can be revived —
+the design is still valid; it's just speculative right now.
 
 ---
 
-## Diff 7: Throttled background fetch
+## Diff 7: Throttled background fetch `WONTFIX`
 
-Inside `_rb_prompt_run`, add a time-throttled background fetch that runs at
-most once per repo per 10 minutes.
+**Resolved during gitconfig audit**: redundant. The user's gitconfig has
+`maintenance.repo` configured for both major monorepos, and `git
+maintenance start` already runs hourly `prefetch` as a background system
+service. Adding a per-prompt throttled fetch on top would be re-implementing
+work git itself does at the OS-scheduler level.
 
-**Files**
-- Modify: `fish/conf.d/rb-prompt.fish` — modify the fetch logic inside `_rb_prompt_run`'s subshell command
-
-**Notes**
-- Stamp file: `$GIT_DIR/.rb-prompt-last-fetch` (worktree-aware via `$GIT_DIR`).
-- Fetch runs `git fetch --no-tags --quiet` in background, output to `/dev/null`.
-- Default: on. Configurable via `rb_prompt_fetch_interval` (seconds; default 600).
-- Skip fetch if repo has no remotes.
-
-### Sign-off
-
-- [ ] First prompt in a repo with stale stamp triggers a fetch
-- [ ] Subsequent prompts within the throttle window do not trigger fetch
-- [ ] After window expires, next prompt triggers fetch
-- [ ] Fetch runs in background; prompt does not block on network
-- [ ] Repo with no remotes does not attempt to fetch
-- [ ] User sign-off
+If the user ever drops `git maintenance` or works in a repo without it,
+this can be revived. The design is still valid.
 
 ---
 
@@ -407,13 +379,14 @@ prefixed/suffixed into the formatted git string. No changes to `fish_prompt.fish
 
 ### Sign-off
 
-- [ ] Inside a worktree: `[wt:<name>]` appears before branch
-- [ ] In a regular checkout: no worktree marker
-- [ ] During `git rebase -i HEAD~3`: shows real branch + `⏸ rebase n/m` progress
-- [ ] During `git merge` with conflict: shows merge marker
-- [ ] During `git cherry-pick`: shows cherry-pick marker
-- [ ] During `git bisect`: shows bisect marker
-- [ ] User sign-off
+- [x] Inside a worktree: `[wt:<repo-name>]` appears before branch (verified — current shell shows `[wt:rybalt]`). Marker shows the *parent repo's* basename, since the worktree's own name is already visible as the bolded git-base in PWD, and the branch is shown alongside the marker.
+- [x] In a regular checkout: no worktree marker (verified in temp repos)
+- [x] During simulated rebase-merge with `head-name`/`msgnum`/`end`: shows real branch + `⏸ rebase 3/7`
+- [x] During simulated `MERGE_HEAD`: shows `⇄ merge` marker
+- [x] During simulated `CHERRY_PICK_HEAD`: shows `⇒ cherry-pick` marker
+- [x] During simulated `BISECT_LOG`: shows `⇆ bisect` marker
+- [x] Branch detection still falls back to symbolic-ref / describe / sha when no rebase state
+- [ ] User sign-off (test in real terminal — start a real `git rebase -i HEAD~2`, leave it mid-rebase, confirm prompt)
 
 ---
 
