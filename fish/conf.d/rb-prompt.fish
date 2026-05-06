@@ -162,6 +162,50 @@ function _rb_prompt_fish_exit --on-event fish_exit
     set --erase $_rb_prompt_git_var
 end
 
+# Host / context indicator: emits "[host][nix:name][container] " when the
+# shell is in a notable environment, empty otherwise. Replaces fish's
+# prompt_login (which always shows user@host even locally) with a marker
+# that's quiet on the dev machine and loud when remote/sandboxed.
+function _rb_prompt_host
+    set -l parts
+
+    # Chroot — adapted from fish's prompt_login (debian convention).
+    # /etc/debian_chroot is set inside debootstrap chroots; the env var
+    # is sometimes set manually by users in other chroot setups.
+    if test -r /etc/debian_chroot
+        set -a parts "chroot:"(cat /etc/debian_chroot 2>/dev/null)
+    else if set --query debian_chroot[1]
+        set -a parts "chroot:$debian_chroot"
+    end
+
+    if set --query SSH_CONNECTION; or set --query SSH_TTY
+        if test -n "$hostname"
+            set -a parts $hostname
+        else
+            # Some minimal containers / chroots don't set hostname.
+            # Fall back to a literal so the marker still renders.
+            set -a parts ssh
+        end
+    end
+
+    if set --query IN_NIX_SHELL
+        # IN_NIX_SHELL is "pure" or "impure". Avoid using $name (which
+        # nix-shell sets to the derivation name) because $name is one of
+        # the most generic shell variable names — false-positive risk if
+        # the user happens to have $name set for unrelated reasons.
+        set -a parts "nix:$IN_NIX_SHELL"
+    end
+
+    # /.dockerenv covers docker; /run/.containerenv covers podman native;
+    # $container covers systemd-nspawn, LXC, and other systemd-aware tools.
+    if test -e /.dockerenv; or test -e /run/.containerenv; or set --query container
+        set -a parts container
+    end
+
+    test (count $parts) -gt 0
+        and printf '[%s] ' (string join '][' $parts)
+end
+
 # Symbol defaults — overridable via universal vars.
 set --query rb_prompt_git_dirty;  or set --global rb_prompt_git_dirty •
 set --query rb_prompt_git_ahead;  or set --global rb_prompt_git_ahead ↑

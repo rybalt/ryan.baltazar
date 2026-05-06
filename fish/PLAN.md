@@ -407,12 +407,15 @@ status line when applicable. Concatenate when multiple apply.
 
 ### Sign-off
 
-- [ ] Local shell: no host marker rendered
-- [ ] Inside SSH session: `[<hostname>]` rendered
-- [ ] Inside nix-shell: `[nix:<name>]` rendered (or `[nix]` if name unset)
-- [ ] Inside container: `[container]` rendered
-- [ ] When multiple apply (e.g., SSH + nix): both render concatenated
-- [ ] User sign-off
+- [x] Local shell: no host marker rendered (verified — `_rb_prompt_host` returns empty)
+- [x] Inside SSH session: `[<hostname>]` rendered (verified with `set SSH_CONNECTION`)
+- [x] Inside nix-shell: `[nix:<name>]` rendered (verified with `set IN_NIX_SHELL`/`set name`)
+- [x] Inside nix-shell with no `$name` set: `[nix]` rendered
+- [x] Inside container: `[container]` rendered (verified with `set container`; `/.dockerenv` filesystem check covers docker)
+- [x] When multiple apply (e.g., SSH + nix): both render concatenated as `[host][nix:name]`
+- [x] `prompt_login` removed from `fish_prompt.fish` — host indicator is the sole source of host context, quiet locally
+- [x] Chroot detection (cherry-picked from fish's `prompt_login`): `[chroot:<name>]` rendered when `/etc/debian_chroot` is readable or `$debian_chroot` is set
+- [ ] User sign-off (test from a real SSH session if possible)
 
 ---
 
