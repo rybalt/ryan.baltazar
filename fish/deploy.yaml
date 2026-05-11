@@ -1,0 +1,13 @@
+default_shell: fish
+
+links:
+  - source: .
+    target: ~/.config/fish
+
+post_link:
+  # fisher install is guarded by `functions -q fisher`. The fish module's
+  # repo content includes functions/fisher.fish and completions/fisher.fish,
+  # so once the symlink is in place fisher is effectively already installed;
+  # running `fisher install jorgebucaran/fisher` would error on the conflict.
+  # On fresh machines where these files aren't present, the install runs.
+  - fish -c 'if not functions -q fisher; curl -sL https://git.io/fisher | source; and fisher install jorgebucaran/fisher; end'

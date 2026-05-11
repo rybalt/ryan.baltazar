@@ -1,0 +1,3 @@
+links:
+  - source: CLAUDE_home.md
+    target: ~/.claude/CLAUDE.md

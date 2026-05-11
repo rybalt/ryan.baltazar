@@ -1,0 +1,3 @@
+links:
+  - source: config.ghostty
+    target: ~/Library/Application Support/com.mitchellh.ghostty/config

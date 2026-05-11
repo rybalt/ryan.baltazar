@@ -14,13 +14,29 @@ this repo unless the task is to modify it.
 | Dir        | Symlinked to                            | What it is                                    | Read this first                                                                 |
 |------------|-----------------------------------------|-----------------------------------------------|---------------------------------------------------------------------------------|
 | `claude/`  | `~/.claude/CLAUDE.md`                   | Global Claude Code preferences (one .md file) | [claude/README.md](claude/README.md)                                            |
-| `emacs/`   | `~/.emacs.d/post-init.el`, `custom.el` (modules loaded from `~/.config/rybalt/emacs/`) | Emacs on top of minimal-emacs.d                | [emacs/README.org](emacs/README.org); deep design notes in [emacs/rybalt.org](emacs/rybalt.org) |
 | `fish/`    | `~/.config/fish`                        | Self-owned fish prompt + shell config         | [fish/PLAN.md](fish/PLAN.md) — design history + current behavior across Diffs 1–10 |
-| `ghostty/` | Contents merged into `~/.config/ghostty/` | Ghostty terminal config (single file)        | The file itself: [ghostty/config.ghostty](ghostty/config.ghostty)               |
+| `ghostty/` | `~/Library/Application Support/com.mitchellh.ghostty/config` | Ghostty terminal config (single file)        | The file itself: [ghostty/config.ghostty](ghostty/config.ghostty)               |
 | `nvim/`    | `~/.config/nvim`                        | LazyVim-based config                          | Plugin layer in [nvim/lua/plugins/](nvim/lua/plugins/); upstream docs at <https://lazyvim.github.io> |
+| `deploy/`  | n/a (the installer itself)              | Symlink/bootstrap script + baseline Brewfile  | [deploy/README.md](deploy/README.md)                                            |
 
 When a task touches only one of these directories, read its doc and stay
 local. Cross-subdir context is almost never needed.
+
+## Deploying configs
+
+`deploy/deploy.py` is the entry point for placing all symlinks. It
+auto-discovers any top-level subdir containing a `deploy.yaml` and treats
+it as a module. Common usage:
+
+- `./deploy/deploy.py` — interactive TUI to pick modules.
+- `./deploy/deploy.py --all` — deploy everything.
+- `./deploy/deploy.py --modules fish,nvim` — deploy a subset.
+- `./deploy/deploy.py --dry-run --all` — preview without acting.
+
+The script also runs `brew bundle --file deploy/Brewfile` once at start
+(baseline CLI tools, Ghostty cask, fonts) and ensures
+`~/.config/rybalt` → repo root. See [deploy/README.md](deploy/README.md)
+for the full manifest schema and conflict-handling rules.
 
 ## Repo conventions
 
@@ -28,8 +44,10 @@ local. Cross-subdir context is almost never needed.
   substantive change is its own diff with a `### Sign-off` checklist gated
   on explicit user approval. [fish/PLAN.md](fish/PLAN.md) is the canonical
   worked example.
-- **No top-level installer.** Bootstrap on a new machine is: clone → symlink
-  the subdirs you want → install the CLI tools each subdir's README lists.
+- **Top-level installer.** `deploy/deploy.py` handles symlink placement,
+  baseline `brew bundle`, and per-module bootstrap (e.g. bootstrapping fisher
+  for fish). On a new machine: clone the repo, install the Python deps
+  per [deploy/README.md](deploy/README.md), then `./deploy/deploy.py`.
 - **Working-tree path varies by machine.** Some machines clone to
   `~/src/rybalt`, others to `/opt/UnitySrc/repos/rybalt`; `~/.config/rybalt`
   is the stable symlink that other configs reference. Docs may use either
@@ -45,3 +63,7 @@ local. Cross-subdir context is almost never needed.
 - `nvim/README.md` is the stock LazyVim starter README and has no
   project-specific content; treat the `nvim/lua/` tree as the source of
   truth instead.
+- `archive/` holds retired configs (e.g. `archive/emacs/`) kept for reference.
+  Nothing in `archive/` is deployable — `deploy/deploy.py` only discovers
+  top-level subdirs with a `deploy.yaml`, and archived modules deliberately
+  don't have one. See [archive/README.md](archive/README.md).
