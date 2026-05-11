@@ -17,22 +17,27 @@ function fish_right_prompt --description 'Right side: cmd duration + vi mode'
         test (count $out) -gt 0; and set -a parts $dim'['(string join ' ' $out)']'$normal
     end
 
-    # Vi mode (only when vi keybindings are active)
+    # Vi mode (only when vi keybindings are active).
+    # ANSI named colors so the terminal's theme picks the actual RGB.
+    # The previous code referenced $fish_color_selection/$fish_color_match
+    # — those are line-editor highlight vars (often background-shaded), so
+    # they render invisible as foreground.  Normal stays dim (matches the
+    # duration display); transient modes pop because they're worth noticing.
     if test "$fish_key_bindings" != fish_default_key_bindings
         set -l mode_color
         set -l mode_letter
         switch $fish_bind_mode
             case default
-                set mode_color (set_color $fish_color_selection)
+                set mode_color $dim
                 set mode_letter N
             case insert
-                set mode_color (set_color $fish_color_selection)
+                set mode_color (set_color green)
                 set mode_letter I
             case replace replace_one
-                set mode_color (set_color $fish_color_match)
+                set mode_color (set_color red)
                 set mode_letter R
             case visual
-                set mode_color (set_color $fish_color_match)
+                set mode_color (set_color yellow)
                 set mode_letter V
         end
         set -a parts $mode_color'['$mode_letter']'$normal
