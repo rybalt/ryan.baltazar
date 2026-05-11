@@ -1,0 +1,13 @@
+links:
+  - source: .tmux.conf
+    target: ~/.tmux.conf
+
+post_link:
+  # Clone TPM (Tmux Plugin Manager) if not already present — .tmux.conf
+  # declares plugins via TPM and `run '~/.tmux/plugins/tpm/tpm'` at the
+  # bottom, which fails silently if TPM isn't there.
+  - test -d ~/.tmux/plugins/tpm || git clone https://github.com/tmux-plugins/tpm ~/.tmux/plugins/tpm
+  # Install the plugins declared in .tmux.conf (currently: tmux-yank).
+  # TPM's install_plugins script is idempotent — already-installed
+  # plugins are skipped.
+  - ~/.tmux/plugins/tpm/bin/install_plugins

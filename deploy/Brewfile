@@ -1,9 +1,10 @@
 # Runtimes
 brew "python"   # used by deploy/deploy.py
 
-# Shells / editors / terminal
+# Shells / editors / terminal multiplexer / terminal
 brew "fish"
 brew "neovim"
+brew "tmux"
 cask "ghostty"
 
 # CLI tools mandated by ~/.claude/CLAUDE.md

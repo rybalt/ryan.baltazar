@@ -195,8 +195,8 @@ One-time setup on an Unraid box:
 
 1. Web UI → Plugins → install **NerdTools** (or NerdPack on older Unraid).
 2. In NerdTools, check the packages you want — at minimum `fish`,
-   `neovim`, `git`, `git-delta`, `python3`. Apply. NerdTools persists
-   these via `/boot/config/` so they survive reboot.
+   `neovim`, `tmux`, `git`, `git-delta`, `python3`. Apply. NerdTools
+   persists these via `/boot/config/` so they survive reboot.
 3. Clone the repo somewhere persistent:
    ```sh
    git clone <repo-url> /boot/config/rybalt
