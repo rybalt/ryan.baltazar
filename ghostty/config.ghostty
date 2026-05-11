@@ -1,0 +1,21 @@
+# Theme — auto-switch with system appearance
+theme = light:GitHub Light High Contrast,dark:GitHub Dark High Contrast
+
+# Font
+font-family = FiraCode Nerd Font Mono
+font-size = 12
+
+# Cursor
+cursor-style-blink = false
+
+# Window
+window-theme = auto
+
+# Terminal
+scrollback-limit = 10000
+
+# macOS: Option key as Alt (matches iTerm2 Option Key Sends = Esc+)
+macos-option-as-alt = true
+
+# Quick terminal (Ctrl+` from anywhere, even outside Ghostty)
+keybind = global:ctrl+grave_accent=toggle_quick_terminal
