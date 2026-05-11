@@ -46,6 +46,9 @@ CANONICAL_HOME = Path("~/.config/rybalt").expanduser()
 class Module:
     name: str
     path: Path
+    platform: str = "any"  # any | darwin | linux | win32 — modules whose
+                           # declared platform doesn't match sys.platform
+                           # get skipped (with a notice).
     brew_packages: list[str] = field(default_factory=list)
     pre_link: list[str] = field(default_factory=list)
     links: list[dict] = field(default_factory=list)
@@ -107,6 +110,7 @@ def discover_modules() -> list[Module]:
             Module(
                 name=sub.name,
                 path=sub,
+                platform=data.get("platform") or "any",
                 brew_packages=data.get("brew_packages") or [],
                 pre_link=data.get("pre_link") or [],
                 links=data.get("links") or [],
@@ -143,8 +147,18 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def select_modules(modules: list[Module], args: argparse.Namespace) -> list[Module]:
+    # Filter out modules whose declared platform doesn't match the current
+    # OS. `--all` and the TUI silently drop them (with a notice); explicit
+    # --modules NAME erroring out is friendlier than silently doing nothing
+    # for the named module.
+    compatible = [m for m in modules if m.platform == "any" or sys.platform == m.platform]
+    skipped = [m for m in modules if m not in compatible]
+    if skipped and (args.all or args.modules is None):
+        names = ", ".join(f"{m.name} (platform={m.platform})" for m in skipped)
+        print(f"Skipping platform-incompatible modules on {sys.platform}: {names}")
+
     if args.all:
-        return modules
+        return compatible
     if args.modules is not None:
         if not args.modules:
             sys.exit("--modules requires at least one module name.")
@@ -153,16 +167,22 @@ def select_modules(modules: list[Module], args: argparse.Namespace) -> list[Modu
         if missing:
             sys.exit(f"Unknown module(s): {', '.join(missing)}. "
                      f"Available: {', '.join(by_name)}")
+        # Explicit selection: error if user asked for a platform-incompatible module.
+        incompatible = [n for n in args.modules
+                        if by_name[n].platform != "any" and sys.platform != by_name[n].platform]
+        if incompatible:
+            details = ", ".join(f"{n} (platform={by_name[n].platform})" for n in incompatible)
+            sys.exit(f"Module(s) require a different platform than {sys.platform}: {details}")
         return [by_name[n] for n in args.modules]
     if not sys.stdin.isatty():
         sys.exit("No --all or --modules and stdin isn't a TTY — refusing to guess.")
     chosen = questionary.checkbox(
         "Select modules to deploy",
-        choices=[questionary.Choice(m.name, checked=True) for m in modules],
+        choices=[questionary.Choice(m.name, checked=True) for m in compatible],
     ).ask()
     if chosen is None:
         sys.exit("Cancelled.")
-    by_name = {m.name: m for m in modules}
+    by_name = {m.name: m for m in compatible}
     return [by_name[n] for n in chosen]
 
 

@@ -103,6 +103,11 @@ Example using a hypothetical `mytool` module that exercises every field:
 ```yaml
 # All fields optional except `links`.
 
+platform: any          # any | darwin | linux | win32. Modules whose
+                        # declared platform doesn't match `sys.platform`
+                        # are skipped (with a notice on --all / TUI;
+                        # error on explicit --modules NAME).
+
 brew_packages:
   # Module-specific brew formulae/casks. Baseline tools (ripgrep, fd, …) live
   # in deploy/Brewfile, not here. Flags allowed; whitespace-split and passed
@@ -178,3 +183,43 @@ deploy/
 
 Per-module manifests live alongside the module they describe:
 `claude/deploy.yaml`, `fish/deploy.yaml`, `ghostty/deploy.yaml`, `nvim/deploy.yaml`.
+
+## Unraid notes
+
+The script runs on Linux but does not attempt to programmatically install
+packages there — `fish` / `neovim` / `git-delta` aren't in Slackware's
+official repos (Unraid is Slackware-based), and the de facto plugin used
+to install them (NerdTools) is GUI-driven without a stable CLI API.
+
+One-time setup on an Unraid box:
+
+1. Web UI → Plugins → install **NerdTools** (or NerdPack on older Unraid).
+2. In NerdTools, check the packages you want — at minimum `fish`,
+   `neovim`, `git`, `git-delta`, `python3`. Apply. NerdTools persists
+   these via `/boot/config/` so they survive reboot.
+3. Clone the repo somewhere persistent:
+   ```sh
+   git clone <repo-url> /boot/config/rybalt
+   ```
+4. Symlink the canonical path that the rest of the repo references:
+   ```sh
+   ln -s /boot/config/rybalt ~/.config/rybalt
+   ```
+5. Install Python deps:
+   ```sh
+   python3 -m pip install --user -r /boot/config/rybalt/deploy/requirements.txt
+   ```
+6. Run the deploy. `ghostty` is auto-skipped (declares `platform: darwin`):
+   ```sh
+   /boot/config/rybalt/deploy/deploy.py --all --yes
+   ```
+7. *(Optional)* Append to `/boot/config/go` so the deploy re-runs on each
+   boot — Unraid wipes `/root/` and `~/.config/` from RAM on reboot, so
+   symlinks are ephemeral without this:
+   ```sh
+   /boot/config/rybalt/deploy/deploy.py --all --yes >> /tmp/rybalt-deploy.log 2>&1
+   ```
+
+The `--yes` flag auto-declines `default_shell` and `default_editor`
+prompts (Unraid's root shell isn't typically `chsh`-able to a non-default
+shell anyway; configure manually if desired).

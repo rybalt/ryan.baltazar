@@ -1,3 +1,5 @@
+platform: darwin   # ~/Library/Application Support/... is macOS-only
+
 links:
   - source: config.ghostty
     target: ~/Library/Application Support/com.mitchellh.ghostty/config
