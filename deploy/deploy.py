@@ -52,6 +52,7 @@ class Module:
     post_link: list[str] = field(default_factory=list)
     next_steps: list[str] = field(default_factory=list)
     default_shell: str | None = None  # e.g. "fish"; offers `chsh` if not current
+    default_editor: str | None = None  # e.g. "nvim"; offers to set $EDITOR/$VISUAL
 
 
 @dataclass
@@ -112,6 +113,7 @@ def discover_modules() -> list[Module]:
                 post_link=data.get("post_link") or [],
                 next_steps=data.get("next_steps") or [],
                 default_shell=data.get("default_shell"),
+                default_editor=data.get("default_editor"),
             )
         )
     return found
@@ -324,7 +326,11 @@ def deploy_module(m: Module, args: argparse.Namespace,
     if m.default_shell:
         maybe_set_default_shell(m, args, result)
 
-    # 6. next_steps (collected for end-of-run printing)
+    # 6. default_editor (optional $EDITOR/$VISUAL set, prompted)
+    if m.default_editor:
+        maybe_set_default_editor(m, args, result)
+
+    # 7. next_steps (collected for end-of-run printing)
     if m.next_steps:
         result.next_steps[m.name] = list(m.next_steps)
 
@@ -467,6 +473,70 @@ def maybe_set_default_shell(m: Module, args: argparse.Namespace,
     else:
         result.warnings.append(
             f"{m.name}: chsh exited {proc.returncode}"
+        )
+
+
+def maybe_set_default_editor(m: Module, args: argparse.Namespace,
+                             result: RunResult):
+    """If the module declares `default_editor: <name>`, and that binary
+    isn't already the user's `$EDITOR`, prompt to set `$EDITOR` and
+    `$VISUAL` as fish universal variables. Persists across fish sessions
+    via ~/.config/fish/fish_variables. Honors --dry-run / --yes.
+
+    zsh/bash users: set `export EDITOR=<name>` in your rc yourself —
+    we deliberately don't touch shell rc files."""
+    editor_name = m.default_editor
+    if not editor_name:
+        return
+    editor_path = shutil.which(editor_name)
+    if not editor_path:
+        result.warnings.append(
+            f"{m.name}: cannot find {editor_name} on PATH; "
+            "skipping default-editor setup"
+        )
+        return
+    current = os.environ.get("EDITOR", "")
+    if current:
+        try:
+            current_bin = current.split()[0]
+            current_path = shutil.which(current_bin) or current_bin
+            if Path(current_path).resolve() == Path(editor_path).resolve():
+                return  # already default
+        except (OSError, IndexError):
+            pass  # fall through to prompt
+    if args.dry_run:
+        print(f"[dry-run] [{m.name}] would prompt to set $EDITOR/$VISUAL "
+              f"to {editor_name} (current: {current or 'unset'})")
+        return
+    if args.yes:
+        return  # non-interactive: default is "no, don't change"
+    print(f"[{m.name}] current $EDITOR: {current or '(unset)'}")
+    confirmed = questionary.confirm(
+        f"Set $EDITOR and $VISUAL to {editor_name} "
+        f"(via fish universal vars)?",
+        default=False,
+    ).ask()
+    if not confirmed:
+        return
+    if not shutil.which("fish"):
+        result.warnings.append(
+            f"{m.name}: fish not present; cannot persist $EDITOR via fish "
+            f"universal vars. Set `export EDITOR={editor_name}` in your "
+            f"shell rc instead."
+        )
+        return
+    cmd = (
+        f"set --universal --export EDITOR {shlex.quote(editor_name)}; "
+        f"and set --universal --export VISUAL {shlex.quote(editor_name)}"
+    )
+    proc = subprocess.run(["fish", "-c", cmd], check=False)
+    if proc.returncode == 0:
+        print(f"[{m.name}] $EDITOR and $VISUAL set to {editor_name} "
+              "(fish universal vars; effective in new fish sessions)")
+    else:
+        result.warnings.append(
+            f"{m.name}: fish universal-var set failed "
+            f"(exit {proc.returncode})"
         )
 
 

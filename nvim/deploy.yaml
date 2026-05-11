@@ -1,3 +1,5 @@
+default_editor: nvim
+
 links:
   - source: .
     target: ~/.config/nvim

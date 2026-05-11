@@ -91,7 +91,10 @@ Then for each selected module, in order:
 5. `default_shell` — optional. If set (e.g. `fish`) and isn't already the
    user's `$SHELL`, prompts to `chsh` into it (and adds to `/etc/shells`
    first if needed).
-6. `next_steps` — printed at the end of the run; never executed.
+6. `default_editor` — optional. If set (e.g. `nvim`) and isn't already
+   `$EDITOR`, prompts to set `$EDITOR` and `$VISUAL` as fish universal
+   vars. Fish-only persistence; zsh/bash users edit their rc themselves.
+7. `next_steps` — printed at the end of the run; never executed.
 
 ## Manifest schema (`<module>/deploy.yaml`)
 
@@ -124,6 +127,12 @@ default_shell: mytool-sh   # optional. If your $SHELL doesn't already point
                             # (and adds the path to /etc/shells via sudo
                             # if missing). Honors --yes (auto-decline) and
                             # --dry-run (describe).
+
+default_editor: mytool     # optional. If $EDITOR doesn't already resolve
+                            # to this binary, prompts to set $EDITOR and
+                            # $VISUAL via fish universal vars (persists
+                            # across fish sessions). zsh/bash users
+                            # set `export EDITOR=…` in their rc themselves.
 
 next_steps:
   # Printed at end-of-run; not executed. For things that can't be automated
