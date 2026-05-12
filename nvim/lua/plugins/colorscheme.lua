@@ -1,19 +1,39 @@
--- Monokai Pro (replacement for doom-monokai-pro from Emacs)
+-- Catppuccin (replaces previous Monokai Pro setup). Auto-switches between
+-- Latte (light) and Mocha (dark) following Vim's $background, which LazyVim
+-- syncs with the macOS system appearance.
 return {
   {
-    "loctvl842/monokai-pro.nvim",
+    "catppuccin/nvim",
+    name = "catppuccin",
     lazy = false,
     priority = 1000,
     opts = {
-      transparent_background = false,
-      terminal_colors = true,
-      devicons = true,
-      styles = {
-        comment = { italic = true },
+      flavour = "auto",
+      background = {
+        light = "latte",
+        dark = "mocha",
       },
-      -- Filter: classic | octagon | pro | machine | ristretto | spectrum.
-      -- "pro" matches doom-monokai-pro from the Emacs config.
-      filter = "pro",
+      transparent_background = false,
+      term_colors = true,
+      styles = {
+        comments = { "italic" },
+      },
+      integrations = {
+        cmp = true,
+        gitsigns = true,
+        nvimtree = true,
+        telescope = { enabled = true },
+        treesitter = true,
+        native_lsp = {
+          enabled = true,
+          underlines = {
+            errors = { "undercurl" },
+            hints = { "undercurl" },
+            warnings = { "undercurl" },
+            information = { "undercurl" },
+          },
+        },
+      },
     },
   },
 
@@ -21,7 +41,7 @@ return {
   {
     "LazyVim/LazyVim",
     opts = {
-      colorscheme = "monokai-pro",
+      colorscheme = "catppuccin",
     },
   },
 }
