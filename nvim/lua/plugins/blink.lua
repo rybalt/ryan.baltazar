@@ -37,6 +37,12 @@ return {
     },
 
     config = function(_, opts)
+      -- LazyVim stashes a `sources.compat` table on opts for routing
+      -- nvim-cmp legacy sources through blink.compat. Its own `config`
+      -- nils it before calling setup; since we replace `config` here,
+      -- we have to do the same cleanup ourselves or blink complains
+      -- about "Unexpected field in configuration".
+      if opts.sources then opts.sources.compat = nil end
       require("blink.cmp").setup(opts)
 
       -- ── Upvalues (captured once at config time) ─────────────────────

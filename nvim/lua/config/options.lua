@@ -46,3 +46,9 @@ end
 -- so the options are in effect if the config is ever used in terminal nvim.
 vim.opt.winblend  = 10
 vim.opt.pumblend  = 10
+
+-- Restore the classic cmdline row below the statusline. LazyVim sets
+-- cmdheight=0 because noice paints `:` in a popup; with noice's cmdline
+-- routing disabled (see plugins/noice.lua) we need a real line for `:`
+-- and `/` to render on.
+vim.opt.cmdheight = 1

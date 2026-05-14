@@ -1,19 +1,7 @@
--- noice.nvim tweaks: stop routing transient messages (":3 fewer lines",
--- "search hit bottom", etc.) into floating popups. Send them back to
--- the classic cmdline area at the bottom of the screen, like plain Neovim.
--- Other noice features (fancy cmdline input, LSP progress) stay intact.
+-- Disable noice.nvim entirely. LazyVim ships it for the centered cmdline
+-- popup, popupmenu styling, message routing, and LSP markdown rendering —
+-- we want the classic native cmdline and don't miss the rest. Native nvim
+-- handles `vim.notify`, LSP hovers, and signature help adequately.
 return {
-  {
-    "folke/noice.nvim",
-    opts = {
-      messages = {
-        enabled = false,
-      },
-      notify = {
-        -- Also keep transient notifications out of popups (nvim-notify's
-        -- toasts can feel intrusive for terse edit feedback).
-        enabled = false,
-      },
-    },
-  },
+  { "folke/noice.nvim", enabled = false },
 }
