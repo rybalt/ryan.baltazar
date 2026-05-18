@@ -17,5 +17,17 @@ scrollback-limit = 10000
 # macOS Option key as Alt (matches iTerm2 Option Key Sends = Esc+)
 macos-option-as-alt = true
 
-# Quick terminal (Ctrl+` from anywhere, even outside Ghostty)
+# Quick terminal (Ctrl+` from anywhere, even outside Ghostty).
+#
+# Position: right-side flyout. Quick terminal width is auto-sized; we lean
+# on `window-width` for the cell count. (Ghostty has no
+# quick-terminal-size option, so window-width affects regular windows too,
+# but they're freely resizable after launch.)
+#
+# Note: Ghostty doesn't currently support a per-quick-terminal command
+# override, so the quick terminal lands in plain fish like any other
+# window. To attach to the persistent claude tmux session, run the fish
+# function `attach-claude-primary` (see fish/functions/).
 keybind = global:ctrl+grave_accent=toggle_quick_terminal
+quick-terminal-position = right
+window-width = 120
