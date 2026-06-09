@@ -1,0 +1,13 @@
+# Pi coding agent config. Per-item links only — ~/.pi/agent also holds
+# local-only files the repo must NOT own: auth.json (secret), sessions/ and
+# trust.json (state), settings.json (machine config; left local for now).
+# deploy.py creates ~/.pi/agent if missing and prompts/backs-up on conflicts.
+links:
+  - source: APPEND_SYSTEM.md
+    target: ~/.pi/agent/APPEND_SYSTEM.md
+  - source: prompts
+    target: ~/.pi/agent/prompts
+  - source: extensions
+    target: ~/.pi/agent/extensions
+  - source: skills
+    target: ~/.pi/agent/skills
