@@ -1,0 +1,21 @@
+# Claude Code documentation files (user-specific, not for commit)
+CLAUDE.md
+.claude/
+.agent-shell/
+**/.claude/settings.local.json
+
+# .NET build/project stuff?
+obj/
+bin/
+
+# Emacs
+*~
+\#*\#
+.\#*
+*.elc
+
+# vscode
+.vscode/
+
+# MacOS nonsense
+.DS_Store

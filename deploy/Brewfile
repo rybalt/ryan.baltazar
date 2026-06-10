@@ -16,5 +16,8 @@ brew "yq"
 brew "tree"
 brew "tokei"
 
+# Git merge/diff tool
+cask "p4v"
+
 # Font referenced by ghostty/config.ghostty
 cask "font-fira-code-nerd-font"

@@ -103,5 +103,20 @@ return {
       },
       { "<leader>gh", "<cmd>DiffviewFileHistory %<cr>", desc = "Diffview file history (current file)" },
     },
+    opts = {},
+    config = function(_, opts)
+      -- Re-configure diffview on VimResized so layout adapts to terminal width
+      local function configure_diffview()
+        local layout = vim.o.columns >= 160 and "diff2_horizontal" or "diff1_plain"
+        require("diffview").setup(vim.tbl_deep_extend("force", opts, {
+          view = {
+            default = { layout = layout },
+            file_history = { layout = layout },
+          },
+        }))
+      end
+      configure_diffview()
+      vim.api.nvim_create_autocmd("VimResized", { callback = configure_diffview })
+    end,
   },
 }

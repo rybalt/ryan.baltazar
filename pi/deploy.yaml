@@ -9,5 +9,7 @@ links:
     target: ~/.pi/agent/prompts
   - source: extensions
     target: ~/.pi/agent/extensions
+  - source: agents
+    target: ~/.pi/agent/agents
   - source: skills
     target: ~/.pi/agent/skills

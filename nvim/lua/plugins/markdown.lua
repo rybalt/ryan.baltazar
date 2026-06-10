@@ -43,6 +43,29 @@ return {
     },
   },
 
+  -- Markdown formatting: hard-wrap prose at 120 in the source so buffers can
+  -- run with wrap=false (keeps render-markdown table borders aligned, see
+  -- config/autocmds.lua). prettier wraps prose to print-width but never wraps
+  -- table cells.
+  {
+    "stevearc/conform.nvim",
+    opts = {
+      formatters_by_ft = {
+        markdown = { "prettier" },
+      },
+      formatters = {
+        prettier = {
+          prepend_args = { "--print-width", "120", "--prose-wrap", "always" },
+        },
+      },
+    },
+  },
+  -- Ensure the prettier binary is installed.
+  {
+    "mason-org/mason.nvim",
+    opts = { ensure_installed = { "prettier" } },
+  },
+
   -- Focused reading/writing view (replaces olivetti-mode from Emacs).
   -- zen-mode hides sibling windows (explorer, splits) and centers the
   -- current buffer at a fixed width. Toggle on/off to switch between

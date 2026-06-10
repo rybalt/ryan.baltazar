@@ -1,0 +1,88 @@
+[alias]
+	run = stack run
+
+[filter "lfs"]
+	clean = git-lfs clean -- %f
+	smudge = git-lfs smudge -- %f
+	process = git-lfs filter-process
+	required = true
+
+[user]
+	name = Ryan Baltazar
+	email = ryan.baltazar@unity3d.com
+
+[core]
+	pager = delta
+	fsmonitor = true
+	untrackedCache = true
+
+[rebase]
+	updateRefs = true
+	autoSquash = true
+	autoStash = true
+
+[diff]
+	tool = p4merge
+	algorithm = histogram
+	colorMoved = plain
+
+[merge]
+	tool = p4merge
+	conflictStyle = zdiff3
+	directoryRenames = true
+
+[mergetool "bc"]
+	trustExitCode = true
+
+[rerere]
+	enabled = true
+	autoUpdate = true
+
+[push]
+	autoSetupRemote = true
+	default = simple
+	useForceIfIncludes = true
+
+[fetch]
+	prune = true
+
+[alias]
+    diffcode = diff -- ":(exclude)*.meta" ":(exclude)*.unity" ":(exclude)*.prefab" ":(exclude)*.asset" ":(exclude)*.mat" ":(exclude)*.controller" ":(exclude)*.anim" ":(exclude)*.fbx" ":(exclude)*.obj" ":(exclude)*.tga" ":(exclude)*.exr" ":(exclude)*.png" ":(exclude)*.jpg" ":(exclude)*.jpeg" ":(exclude)*.wav" ":(exclude)*.mp3" ":(exclude)*.physicMaterial" ":(exclude)*.physicsMaterial2D" ":(exclude)*.lighting" ":(exclude)*.mask" ":(exclude)*.brush" ":(exclude)*.flare" ":(exclude)*.terrainlayer" ":(exclude)*.mixer" ":(exclude)**/packages-lock.json" ":(exclude)**/manifest.json" ":(exclude)**/ProjectVersion.txt"
+    lg = log --graph --pretty=format:'%Cred%h%Creset -%C(yellow)%d%Creset %s %Cgreen(%cr) %C(bold blue)<%an>%Creset'
+    flg = log --graph --pretty=format:'%Cred%h%Creset -%C(yellow)%d%Creset %s %Cgreen(%cr) %C(bold blue)<%an>%Creset' --first-parent
+	rb-add = !dotnet run --project /opt/UnitySrc/repos/rybalt-unity/better-git-add --
+	dv = "!f() { nvim -c \"DiffviewOpen ${1:-HEAD}\" -c \"tabonly\"; }; f"
+
+[core]
+	ignorecase = true
+
+[interactive]
+	diffFilter = delta --color-only
+
+[delta]
+	navigate = true
+
+[column]
+	ui = auto
+
+[branch]
+	sort = -committerdate
+
+[maintenance]
+	repo = /opt/UnitySrc/hand-interaction/com.unity.xr.hands
+	repo = /opt/UnitySrc/repos/unity
+[difftool "p4merge"]
+	path = /opt/homebrew/bin/p4merge
+[difftool]
+	prompt = false
+	trustExitCode = true
+[mergetool "p4merge"]
+	cmd = p4merge \"$BASE\" \"$LOCAL\" \"$REMOTE\" \"$MERGED\"
+	trustExitCode = false
+[mergetool]
+	prompt = false
+	keepBackup = false
+[feature]
+	manyFiles = true
+[pull]
+	rebase = true
