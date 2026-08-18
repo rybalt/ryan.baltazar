@@ -1,0 +1,17 @@
+# Custom UnityYAMLMerge fallback spec.
+# Referenced via `--fallback` in the [merge "unityyamlmerge"] git driver so it
+# survives Unity editor updates (the editor's bundled mergespecfile.txt lives
+# inside the .app and is version-specific).
+#
+# Routes conflicts UnityYAMLMerge cannot resolve on its own to p4merge.
+# Placeholder substitutions (from UnityYAMLMerge):
+#   %b = common base   %l = local (ours)   %r = incoming remote (theirs)
+#   %d = destination (output file)
+# Arg order mirrors Unity's built-in p4merge entry: base theirs ours dest.
+#
+# Uses launchp4merge (the p4merge.app launcher installed by the Homebrew p4v
+# cask); /opt/homebrew/bin/p4merge is only a wrapper shim over this.
+
+unity  use "/Applications/p4merge.app/Contents/Resources/launchp4merge" "%b" "%r" "%l" "%d"
+prefab use "/Applications/p4merge.app/Contents/Resources/launchp4merge" "%b" "%r" "%l" "%d"
+*      use "/Applications/p4merge.app/Contents/Resources/launchp4merge" "%b" "%r" "%l" "%d"

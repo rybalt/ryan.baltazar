@@ -1,0 +1,16 @@
+# Global git attributes.
+#
+# Mergiraf structural (syntax-aware) merge driver.
+# Driver defined in git config under [merge "mergiraf"].
+# Deliberately EXCLUDES Unity-tagged YAML (*.unity, *.prefab, *.asset, *.meta) —
+# those must go through Unity's UnityYAMLMerge (SmartMerge), not mergiraf.
+*.cs   merge=mergiraf
+*.json merge=mergiraf
+*.xml  merge=mergiraf
+
+# Unity SmartMerge (UnityYAMLMerge) — object-aware merge for Unity's serialized
+# YAML. Driver defined in git config under [merge "unityyamlmerge"]; binary path
+# is hard-coded there to Editor 6000.0.75f1 (Contents/Tools/UnityYAMLMerge).
+*.unity  merge=unityyamlmerge
+*.prefab merge=unityyamlmerge
+*.asset  merge=unityyamlmerge

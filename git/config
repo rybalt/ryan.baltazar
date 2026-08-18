@@ -28,7 +28,7 @@
 
 [merge]
 	tool = p4merge
-	conflictStyle = zdiff3
+	conflictStyle = diff3
 	directoryRenames = true
 
 [mergetool "bc"]
@@ -71,6 +71,7 @@
 [maintenance]
 	repo = /opt/UnitySrc/hand-interaction/com.unity.xr.hands
 	repo = /opt/UnitySrc/repos/unity
+	repo = /opt/UnitySrc/repos/xr
 [difftool "p4merge"]
 	path = /opt/homebrew/bin/p4merge
 [difftool]
@@ -86,3 +87,12 @@
 	manyFiles = true
 [pull]
 	rebase = true
+[merge "mergiraf"]
+	name = mergiraf
+	driver = mergiraf merge --git %O %A %B -s %S -x %X -y %Y -p %P -l %L
+[merge "unityyamlmerge"]
+	name = Unity SmartMerge (UnityYAMLMerge)
+	driver = /Applications/Unity/Hub/Editor/6000.0.75f1/Unity.app/Contents/Tools/UnityYAMLMerge merge -h -p --force %O %B %A %A
+	recursive = binary
+[scalar]
+	repo = /opt/UnitySrc/repos/xr
