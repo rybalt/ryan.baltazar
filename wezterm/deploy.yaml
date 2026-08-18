@@ -1,0 +1,5 @@
+platform: darwin   # wezterm/PLAN.md scopes this migration to macOS only
+
+links:
+  - source: wezterm.lua
+    target: ~/.config/wezterm/wezterm.lua
