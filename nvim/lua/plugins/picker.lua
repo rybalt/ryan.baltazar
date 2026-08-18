@@ -22,6 +22,22 @@ return {
             -- ignored stays default (respect .gitignore): build artifacts
             -- and anything an explicit .gitignore / .fdignore hides stays hidden.
           },
+          explorer = {
+            -- snacks maps <C-j>/<C-k> to move the list selection, shadowing the
+            -- smart-splits window motions (see navigation.lua) so up/down don't
+            -- cross into/out of the explorer. Disable them here (explorer only)
+            -- to let the global smart-splits maps through; j/k still move the
+            -- tree. auto_close is false for the explorer, so leaving via C-h
+            -- doesn't close it. Regular pickers keep <C-j>/<C-k> as list nav.
+            win = {
+              list = {
+                keys = {
+                  ["<c-j>"] = false,
+                  ["<c-k>"] = false,
+                },
+              },
+            },
+          },
         },
       },
     },
