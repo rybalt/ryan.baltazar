@@ -1,3 +1,9 @@
 links:
   - source: CLAUDE_home.md
     target: ~/.claude/CLAUDE.md
+  - source: agents/diff-coder.md
+    target: ~/.claude/agents/diff-coder.md
+  - source: agents/diff-reviewer.md
+    target: ~/.claude/agents/diff-reviewer.md
+  - source: skills/diff-review
+    target: ~/.claude/skills/diff-review
