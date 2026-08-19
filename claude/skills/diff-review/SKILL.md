@@ -26,6 +26,9 @@ Review local code changes against the conventions and patterns established in th
 | `--multi` | Opt-in multi-model fan-out (default off). |
 | `--full` | Force full output (default for manual invocation). |
 | `--compact` | Force compact output (default when invoked from the dev loop or another skill). |
+| `--diff-file <path>` | Review the diff in this file instead of computing one. When present, Step 0 uses it verbatim and skips `git diff`. |
+| `--brief <path>` | Optional. Path to the diff's brief (its requirements + acceptance criteria). When present, run the spec-compliance step (Step 3). |
+| `--report <path>` | Optional. Explicit path to write the findings report file to, overriding the path-discovery logic under `## What NOT to flag`. |
 
 If neither flag is passed, default to `--full`. Programmatic consumers (the dev loop, future `write-and-review` skill) must pass `--compact` explicitly.
 
@@ -36,6 +39,7 @@ If neither flag is passed, default to `--full`. Programmatic consumers (the dev 
 Critically: **do NOT read commit messages, PR descriptions, or branch descriptions yet.** You must form your own independent assessment of what the code does, why it might be needed, and whether the approach is sound — before being exposed to the author's framing. Reading the narrative first anchors your judgment.
 
 1. **Resolve diff scope.**
+   - **0.1. `--diff-file` short-circuit (check this first).** If `--diff-file <path>` was passed, read that file as the diff to review and skip all `git diff` invocation — the file already contains the unified diff, with surrounding context lines. The changed-file set for sub-steps 3 (classify) and 7 (git history) then comes from the diff's own `+++ b/<path>` headers, not `git diff`. You still run inside the repo, so `classify-changes` and `git log` remain available — treat them as best-effort against the live tree, which may have advanced past the snapshot; skip git history for any path the repo no longer contains. Otherwise fall through to the branches below, which are unchanged.
    - If `$ARGUMENTS` is a git ref or range: `git diff <range>` (or `git diff <ref>` for single-commit).
    - If no arg: `git diff HEAD` for working-tree (staged + unstaged combined).
 2. **Read project conventions.** Walk up from the current working directory to find the closest project `CLAUDE.md` and read it in full. Pay particular attention to:
@@ -52,6 +56,8 @@ Critically: **do NOT read commit messages, PR descriptions, or branch descriptio
    - **`ide_artifact`** — emit a ⚠️ finding per file ("likely accidental commit — `<path>` matches an editor autosave/swap pattern"); do NOT read. Not re-evaluated in the relevance pass.
    - **`submodule`** — note in the verdict ("submodule pointer change in `<path>` — review separately by descending into the submodule"); do NOT attempt to flatten or read submodule internals from the parent repo.
 4. **Read full source files.** For every file in the `source` bucket, read the **entire file** (not just hunks). Diff-only review is the #1 cause of false positives and missed issues — you need surrounding context to understand invariants, assumed contracts, and data flow.
+
+   **Exception — `--diff-file` (read-once).** When driven by `--diff-file`, the diff was produced by a `review-package` script with wide (`-U10`) context lines, so it already carries the surrounding code you'd otherwise fetch by reading whole files. Read the diff file once; do not crawl the wider repo, except to investigate a specific, named risk (e.g., "confirm no other caller of this method relies on the old return value") — full-repo reads are the exception in this mode, not the default. This applies only when `--diff-file` drove scope resolution (0.1). For the ref/range and no-arg (working-tree) branches, the "read the entire file" guidance above still applies unchanged.
 5. **Read consumers and callers.** If the change modifies a public/internal API or a contract used elsewhere, grep for callers and read the relevant call sites. Understanding how the code is consumed reveals whether the change could break existing behavior.
 6. **Read related utilities.** If the diff calls into shared helpers, read those to understand thread-safety, ownership, and lifetime contracts.
 7. **Check git history.** Run `git log --oneline -20 -- <file>` for each `source` file. Look for related recent changes, reverts, or prior attempts to fix the same problem. Reveals churn or conflicts with recent work.
@@ -107,6 +113,10 @@ Now read commit messages for the range, and any branch description (`git log --f
    Convention claims based on N=1 evidence have produced false-confidence findings the reviewee correctly pushed back on. Cost a round-trip and weakened the signal of the rest of the review.
 10. **Ensure code suggestions are valid.** Any code you suggest must be syntactically correct and complete.
 11. **Label in-scope vs. follow-up.** Distinguish between issues this diff should fix and out-of-scope improvements. Be explicit when something is a follow-up rather than a blocker.
+12. **Spec-compliance vs. brief — only when `--brief <path>` was passed.** Read the brief and extract its acceptance criteria. Verify the diff satisfies each one.
+    - For any criterion you **cannot** confirm from the diff alone, emit a finding worded "Cannot verify from diff: `<criterion>`" — do not assert pass or fail on it.
+    - Map compliance gaps onto the existing severity tiers, same as any other finding: a missing or violated acceptance criterion is ❌ (or ⚠️ if it's advisory rather than a hard requirement); an unverifiable criterion is ⚠️ or 💡 depending on how consequential it is. Do not invent new severity tiers or new verdict values for this step — it feeds the same ❌/⚠️/💡 counts as the rest of Step 3.
+    - Skip this sub-step entirely when `--brief` was not passed.
 
 ### Step 4 — (Optional) Multi-model fan-out
 
@@ -276,7 +286,9 @@ The skill flags violations of these principles. The project CLAUDE.md decides wh
   - **Default: write to a file.** Inline, emit only the verdict block + the report path + the top 3-5 findings as one-liners (so the consumer/user has signal without opening the file).
   - **Exception — inline-only when genuinely short:** if the rendered findings body is ≤ ~30 lines (verdict + a handful of one-line findings, no detailed analysis), emit inline and skip the file. When in doubt, write the file.
 
-  **Path discovery (in order):**
+  **`--report <path>` override:** if `--report <path>` was passed, write the report there and skip path discovery below entirely.
+
+  **Path discovery (in order, when `--report` was not passed):**
   1. If the project CLAUDE.md pins a reviews directory (e.g. `## Reviews` section), use it.
   2. Else if `<repo-root>/docs/reviews/` exists (where `<repo-root>` = `git rev-parse --show-toplevel`), use it.
   3. Else if `<repo-root>/docs/` exists but `docs/reviews/` does not, fall back to `/tmp/` and suggest in the chat summary: "Consider creating `docs/reviews/` to track reviews in-repo." Do not auto-create.
