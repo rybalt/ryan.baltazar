@@ -100,13 +100,23 @@ execution the main thread orchestrates: brief the subagent, review its output, i
 
 - Open-ended / read-only search across the codebase → `Explore` (`haiku`; `sonnet` if it needs light reasoning)
 - Multi-step research questions → `general-purpose` (`sonnet`)
-- Implementation diffs from a stacked-diff plan → `diff-coder` (default model)
-- Diff review → `diff-reviewer` (default model)
+- Implementation diffs from a stacked-diff plan → `diff-coder` (specify model at dispatch; fallback `sonnet`)
+- Diff review → `diff-reviewer` (specify model at dispatch; fallback `opus`)
 - Plan design itself → `Plan`
 
 Model tiering (the `model` override on `Agent`): mechanical search / existence / pattern-finding → `haiku`; light
 research or synthesis → `sonnet`; judgment-heavy work (design, diff review, debugging from a hypothesis) → `opus`
 (default). Cheaper models for the mechanical tiers; reserve `opus` for judgment.
+
+**Dispatch discipline:**
+
+- **Always specify the model at dispatch.** The agent frontmatter holds only a fallback tier — name the
+  model on every `Agent` call so the tier is a deliberate choice per task, not an accident of the default.
+- **Hand artifacts as file paths, never paste content.** Whatever a subagent reads or writes — a brief, a
+  summary, a diff, search results, a generated file — passes as a path, not a pasted body, so it never
+  re-enters the orchestrator's context. This is what keeps the driver context lean.
+- **Batch small same-shape work into one dispatch.** When several changes share a shape (the same edit
+  across N files, a set of parallel migrations), brief them together rather than one dispatch each.
 
 **Do not delegate when:**
 
@@ -139,16 +149,24 @@ When test results contradict a premise, the first move is to verify (read or ins
 
 ### Dev Loop
 
-Per-diff cycle:
+Per-diff cycle (the orchestrator drives; subagents only implement and review):
 
-1. Make code changes
-2. Compile and fix errors
-3. Run relevant tests and fix failures
-4. Delegate to the `diff-reviewer` subagent (compact mode) for the verdict. **The subagent's response is not
-   user-visible — echo the verdict block + findings inline before any next action.** If verdict is `NEEDS_CHANGES` or
-   `REJECT`, address findings (re-delegate fixes per `## Delegation`) and re-run from step 2. Cap at 2 attempts; on the
-   3rd, surface the diff + verdict to the user without further auto-iteration. (For manual review with multi-model
-   fan-out, invoke `/diff-review --multi` directly instead — the subagent is single-model only.)
+1. **Brief and dispatch the implementer.** Slice the diff's plan section into a brief file:
+   `gen-task-brief PLAN_FILE DIFF_ID` → `.claude/diffstack/<plan>/diff-<N>-brief.md`. Dispatch `diff-coder`
+   with the four-field brief (where the diff fits; the brief-file path; interfaces from earlier diffs;
+   ambiguity resolution) **and an explicit model** — paths, never pasted content. diff-coder returns a
+   compact status block (`DONE | DONE_WITH_CONCERNS | BLOCKED | NEEDS_CONTEXT`) with its summary inline
+   (files changed, key decisions, self-review, concerns). Read the status.
+2. Compile and fix errors. The orchestrator does this — diff-coder never compiles, tests, stages, or commits.
+3. Run relevant tests and fix failures.
+4. **Package and review.** Build the working-tree review package:
+   `gen-review-package .claude/diffstack/<plan>/review-<N>.diff`. Dispatch `diff-reviewer` (compact) with
+   the package — the diff-file path, the brief-file path, and any verbatim
+   `GLOBAL_CONSTRAINTS` — **and an explicit model**. **The subagent's response is not user-visible — echo the
+   verdict block + findings inline before any next action.** If the verdict is `NEEDS_CHANGES` or `REJECT`,
+   address the findings (re-brief `diff-coder` per `## Delegation`) and re-run from step 2. Cap at 2 attempts;
+   on the 3rd, surface the diff + verdict to the user without further auto-iteration. (For manual review with
+   multi-model fan-out, invoke `/diff-review --multi` directly instead — the subagent is single-model only.)
 5. Show diff + diff-review verdict for user sign-off — **do not proceed to next diff without explicit approval**
 
 ### Sign-off Checklists in Plan Files
