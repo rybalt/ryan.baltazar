@@ -104,6 +104,21 @@ config.default_cursor_style = 'SteadyBlock'
 config.send_composed_key_when_left_alt_is_pressed = false
 config.send_composed_key_when_right_alt_is_pressed = false
 
+-- Mux domains --------------------------------------------------------------
+-- Declared unix domains are always-attachable mux targets; the
+-- wezterm-mux-server backing each one starts lazily on first `connect` and
+-- then persists, so tabs/panes survive GUI restarts (the tmux-session
+-- persistence this config otherwise lacks). 'work' and 'scratch' each get
+-- their own socket and independent tab/pane set.
+config.unix_domains = {
+  { name = 'work' },
+  { name = 'scratch' },
+}
+
+-- Attach the GUI to 'work' on launch instead of opening an un-muxed local
+-- window, so a plain `wezterm` start reattaches to the persistent session.
+config.default_gui_startup_args = { 'connect', 'work' }
+
 -- Keybindings (tmux-mirror) -------------------------------------------------
 -- leader = C-Space, matching the tmux prefix in tmux/.tmux.conf. Timeout
 -- mirrors tmux's default: press leader, then the follow-up key within 1s.
@@ -212,6 +227,9 @@ local keys = {
   -- switcher itself already works for in-GUI workspaces.
   { key = 's', mods = 'LEADER', action = act.ShowLauncherArgs { flags = 'FUZZY|WORKSPACES' } },
 
+  -- Attach a mux domain — fuzzy picker over all declared domains.
+  { key = 'd', mods = 'LEADER', action = act.ShowLauncherArgs { flags = 'FUZZY|DOMAINS' } },
+
   -- tmux `prefix ,` — rename the current tab.
   {
     key = ',',
@@ -236,6 +254,13 @@ local keys = {
   -- tmux `prefix r` — reload config in place (tmux/.tmux.conf's `bind r
   -- source-file`).
   { key = 'r', mods = 'LEADER', action = act.ReloadConfiguration },
+
+  -- Copy / paste (macOS). Explicit Cmd-C/Cmd-V so copy is a deliberate
+  -- keystroke rather than a side effect of selecting. Pairs with the
+  -- mouse_bindings override below, which stops drag-select from auto-writing
+  -- the system clipboard; the selection stays highlighted so Cmd-C can grab it.
+  { key = 'c', mods = 'CMD', action = act.CopyTo 'Clipboard' },
+  { key = 'v', mods = 'CMD', action = act.PasteFrom 'Clipboard' },
 }
 
 -- tmux `prefix N` (base-index 1) — activate tab N. ActivateTab is
@@ -249,5 +274,32 @@ for i = 1, 9 do
 end
 
 config.keys = keys
+
+-- Copy on select -----------------------------------------------------------
+-- WezTerm has no `copy_on_select = false` switch; the behavior lives in a mouse
+-- binding. By default, finishing a Left selection completes to
+-- `ClipboardAndPrimarySelection`, so every highlight auto-overwrites the system
+-- clipboard. Rebinding the finish to `PrimarySelection` (macOS-inert, separate
+-- from the Cmd-C/Cmd-V clipboard) keeps the text highlighted — so Cmd-C above
+-- can copy it — without clobbering the clipboard on every drag. streak 1 keeps
+-- click-to-open-link on a plain click; streaks 2/3 cover double/triple-click
+-- word/line selection.
+config.mouse_bindings = {
+  {
+    event = { Up = { streak = 1, button = 'Left' } },
+    mods = 'NONE',
+    action = act.CompleteSelectionOrOpenLinkAtMouseCursor 'PrimarySelection',
+  },
+  {
+    event = { Up = { streak = 2, button = 'Left' } },
+    mods = 'NONE',
+    action = act.CompleteSelection 'PrimarySelection',
+  },
+  {
+    event = { Up = { streak = 3, button = 'Left' } },
+    mods = 'NONE',
+    action = act.CompleteSelection 'PrimarySelection',
+  },
+}
 
 return config
