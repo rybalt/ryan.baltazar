@@ -56,6 +56,9 @@ anything that adds no information.
 - **Present tense**, second person ("you"), imperative for steps.
 - **Cut filler and hedging** — "in order to"→"to", "utilize"→"use", "is able to"→"can"; drop "basically / simply / just
   / actually / very / note that".
+- **Drop qualifiers the context already carries** — "a broken command", not "a broken doctrine command", when the
+  surrounding text has already established which command. Keep a modifier only when it disambiguates or adds
+  information the reader doesn't have.
 - **No nominalizations** — prefer the verb: "configure X", not "perform configuration of X".
 - **State, don't pad.** Lead with the fact; skip throat-clearing preambles and closing summaries that restate what you
   just said.
