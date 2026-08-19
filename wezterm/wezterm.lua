@@ -104,21 +104,6 @@ config.default_cursor_style = 'SteadyBlock'
 config.send_composed_key_when_left_alt_is_pressed = false
 config.send_composed_key_when_right_alt_is_pressed = false
 
--- Mux domains --------------------------------------------------------------
--- Declared unix domains are always-attachable mux targets; the
--- wezterm-mux-server backing each one starts lazily on first `connect` and
--- then persists, so tabs/panes survive GUI restarts (the tmux-session
--- persistence this config otherwise lacks). 'work' and 'scratch' each get
--- their own socket and independent tab/pane set.
-config.unix_domains = {
-  { name = 'work' },
-  { name = 'scratch' },
-}
-
--- Attach the GUI to 'work' on launch instead of opening an un-muxed local
--- window, so a plain `wezterm` start reattaches to the persistent session.
-config.default_gui_startup_args = { 'connect', 'work' }
-
 -- Keybindings (tmux-mirror) -------------------------------------------------
 -- leader = C-Space, matching the tmux prefix in tmux/.tmux.conf. Timeout
 -- mirrors tmux's default: press leader, then the follow-up key within 1s.
@@ -223,12 +208,8 @@ local keys = {
 
   -- tmux `prefix s` — session switcher. tmux sessions map to WezTerm
   -- workspaces, so this opens the launcher filtered to workspaces (fuzzy).
-  -- Workspace *persistence* arrives with the mux domain in Diff 3; the
-  -- switcher itself already works for in-GUI workspaces.
+  -- Works for in-GUI workspaces; there is no cross-restart persistence.
   { key = 's', mods = 'LEADER', action = act.ShowLauncherArgs { flags = 'FUZZY|WORKSPACES' } },
-
-  -- Attach a mux domain — fuzzy picker over all declared domains.
-  { key = 'd', mods = 'LEADER', action = act.ShowLauncherArgs { flags = 'FUZZY|DOMAINS' } },
 
   -- tmux `prefix ,` — rename the current tab.
   {
