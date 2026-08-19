@@ -7,3 +7,5 @@ links:
     target: ~/.claude/agents/diff-reviewer.md
   - source: skills/diff-review
     target: ~/.claude/skills/diff-review
+  - source: scripts
+    target: ~/.claude/scripts

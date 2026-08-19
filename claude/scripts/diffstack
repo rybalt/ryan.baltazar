@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+# Manage the diffstack acceptance ref for the current branch.
+set -euo pipefail
+
+usage() {
+  cat >&2 <<'EOF'
+Usage: diffstack <cmd> [args]
+
+Commands:
+  init          set the acceptance boundary to the current HEAD
+  accept [SHA]  move the acceptance boundary to SHA (default HEAD)
+  base          print the accepted SHA
+  range         print <accepted-sha>..HEAD
+  count         print the number of commits since the accepted SHA
+
+Manages refs/diffstack/accepted/<branch> for the current branch. This ref
+lives outside refs/heads/*, so it never pushes and never shows as a branch.
+EOF
+}
+
+if [[ $# -lt 1 ]]; then
+  usage
+  exit 1
+fi
+
+cmd=$1
+shift
+
+repo_root=$(git rev-parse --show-toplevel)
+branch=$(git -C "$repo_root" rev-parse --abbrev-ref HEAD)
+ref="refs/diffstack/accepted/${branch}"
+
+require_ref() {
+  if ! git -C "$repo_root" rev-parse --verify --quiet "$ref" >/dev/null; then
+    echo "diffstack: no acceptance ref for branch '${branch}'; run 'diffstack init' first" >&2
+    exit 1
+  fi
+}
+
+case "$cmd" in
+init)
+  git -C "$repo_root" update-ref "$ref" HEAD
+  ;;
+accept)
+  require_ref
+  target=${1:-HEAD}
+  git -C "$repo_root" update-ref "$ref" "$target"
+  ;;
+base)
+  require_ref
+  git -C "$repo_root" rev-parse "$ref"
+  ;;
+range)
+  require_ref
+  accepted=$(git -C "$repo_root" rev-parse "$ref")
+  printf '%s..HEAD\n' "$accepted"
+  ;;
+count)
+  require_ref
+  accepted=$(git -C "$repo_root" rev-parse "$ref")
+  git -C "$repo_root" rev-list --count "${accepted}..HEAD"
+  ;;
+*)
+  usage
+  exit 1
+  ;;
+esac

@@ -1,0 +1,93 @@
+#!/usr/bin/env bash
+# Slice one diff's section out of a stacked-diff plan Markdown file into a
+# standalone brief file.
+set -euo pipefail
+
+usage() {
+  cat >&2 <<'EOF'
+Usage: gen-task-brief PLAN_FILE DIFF_ID [OUTFILE]
+
+Extracts the "### Diff DIFF_ID" section (up to the next "### " or "## "
+heading, fence-aware) from PLAN_FILE.
+
+If OUTFILE is given, writes there. Otherwise defaults to
+<repo-root>/.claude/diffstack/<plan-basename>/diff-<DIFF_ID>-brief.md.
+
+Prints the path written to stdout.
+EOF
+}
+
+if [[ $# -lt 2 || $# -gt 3 ]]; then
+  usage
+  exit 1
+fi
+
+plan_file=$1
+diff_id=$2
+outfile=${3:-}
+
+if [[ ! -f "$plan_file" ]]; then
+  echo "gen-task-brief: plan file not found: $plan_file" >&2
+  exit 1
+fi
+
+repo_root=$(git rev-parse --show-toplevel)
+
+ensure_workspace() {
+  local target_dir=$1
+  mkdir -p "$target_dir"
+  local gitignore="$repo_root/.claude/diffstack/.gitignore"
+  if [[ ! -f "$gitignore" ]]; then
+    mkdir -p "$repo_root/.claude/diffstack"
+    printf '*\n' >"$gitignore"
+  fi
+}
+
+if [[ -z "$outfile" ]]; then
+  plan_basename=$(basename "$plan_file")
+  plan_basename=${plan_basename%.md}
+  workspace_dir="$repo_root/.claude/diffstack/$plan_basename"
+  outfile="$workspace_dir/diff-${diff_id}-brief.md"
+fi
+
+ensure_workspace "$(dirname "$outfile")"
+
+in_fence=false
+capturing=false
+found=false
+out_lines=()
+
+while IFS= read -r line || [[ -n "$line" ]]; do
+  is_fence_marker=false
+  if [[ "$line" =~ ^(\`\`\`|~~~) ]]; then
+    is_fence_marker=true
+  fi
+
+  if [[ "$capturing" == true ]]; then
+    if [[ "$in_fence" == false && "$line" =~ ^(##|###)[[:space:]] ]]; then
+      break
+    fi
+    out_lines+=("$line")
+  elif [[ "$in_fence" == false && "$line" =~ ^###[[:space:]]+Diff[[:space:]]+${diff_id}([^0-9]|$) ]]; then
+    capturing=true
+    found=true
+    out_lines+=("$line")
+  fi
+
+  if [[ "$is_fence_marker" == true ]]; then
+    if [[ "$in_fence" == true ]]; then
+      in_fence=false
+    else
+      in_fence=true
+    fi
+  fi
+done <"$plan_file"
+
+if [[ "$found" == false ]]; then
+  echo "gen-task-brief: no '### Diff ${diff_id}' heading found in $plan_file" >&2
+  exit 1
+fi
+
+printf '%s\n' "${out_lines[@]}" >"$outfile"
+
+printf '%s\n' "$outfile"

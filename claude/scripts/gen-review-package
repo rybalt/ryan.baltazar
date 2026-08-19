@@ -1,0 +1,98 @@
+#!/usr/bin/env bash
+# Produce a review package (diff + header) for the diff-review skill's
+# --diff-file arg.
+set -euo pipefail
+
+usage() {
+  cat >&2 <<'EOF'
+Usage:
+  gen-review-package                    working-tree diff (stat + -U10) to stdout
+  gen-review-package OUTFILE            working-tree diff to OUTFILE
+  gen-review-package BASE HEAD          range diff (BASE..HEAD) to stdout
+  gen-review-package BASE HEAD OUTFILE  range diff (BASE..HEAD) to OUTFILE
+
+Arg-count rule: 0 args -> working-tree mode, stdout. 1 arg -> OUTFILE
+(working-tree mode). 2 args -> BASE HEAD (range mode, stdout). 3 args ->
+BASE HEAD OUTFILE.
+EOF
+}
+
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+  usage
+  exit 0
+fi
+
+mode="worktree"
+base=""
+head=""
+outfile=""
+
+case $# in
+0) ;;
+1)
+  if [[ "$1" == *..* ]]; then
+    echo "gen-review-package: '$1' looks like a range spec, not an OUTFILE." >&2
+    echo "  Range mode takes two args: gen-review-package BASE HEAD [OUTFILE]" >&2
+    echo "  e.g. gen-review-package \"\$(diffstack base)\" HEAD out.diff" >&2
+    exit 1
+  fi
+  outfile=$1
+  ;;
+2)
+  mode="range"
+  base=$1
+  head=$2
+  ;;
+3)
+  mode="range"
+  base=$1
+  head=$2
+  outfile=$3
+  ;;
+*)
+  usage
+  exit 1
+  ;;
+esac
+
+repo_root=$(git rev-parse --show-toplevel)
+
+ensure_workspace() {
+  local target_dir=$1
+  mkdir -p "$target_dir"
+  local gitignore="$repo_root/.claude/diffstack/.gitignore"
+  if [[ ! -f "$gitignore" ]]; then
+    mkdir -p "$repo_root/.claude/diffstack"
+    printf '*\n' >"$gitignore"
+  fi
+}
+
+if [[ -n "$outfile" ]]; then
+  resolved_outfile=$outfile
+  if [[ "$resolved_outfile" != /* ]]; then
+    resolved_outfile="$PWD/$resolved_outfile"
+  fi
+  case "$resolved_outfile" in
+  "$repo_root/.claude/diffstack/"*)
+    ensure_workspace "$(dirname "$resolved_outfile")"
+    ;;
+  esac
+fi
+
+render() {
+  if [[ "$mode" == "worktree" ]]; then
+    git -C "$repo_root" diff --stat HEAD
+    printf -- '---\n'
+    git -C "$repo_root" diff -U10 HEAD
+  else
+    git -C "$repo_root" log --oneline "${base}..${head}"
+    printf -- '---\n'
+    git -C "$repo_root" diff -U10 "${base}..${head}"
+  fi
+}
+
+if [[ -n "$outfile" ]]; then
+  render >"$outfile"
+else
+  render
+fi
