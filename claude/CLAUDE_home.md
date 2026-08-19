@@ -167,7 +167,53 @@ Per-diff cycle (the orchestrator drives; subagents only implement and review):
    address the findings (re-brief `diff-coder` per `## Delegation`) and re-run from step 2. Cap at 2 attempts;
    on the 3rd, surface the diff + verdict to the user without further auto-iteration. (For manual review with
    multi-model fan-out, invoke `/diff-review --multi` directly instead — the subagent is single-model only.)
-5. Show diff + diff-review verdict for user sign-off — **do not proceed to next diff without explicit approval**
+5. **Publish or stop.** Under the acceptance model (the default for a stack), on green + `LGTM` commit the
+   diff provisionally and continue — see **Stack Acceptance Model** below. At horizon 1 (or a lone diff),
+   this collapses to the hard gate: show the diff + verdict for user sign-off and **do not proceed to the
+   next diff without explicit approval.**
+
+### Stack Acceptance Model (run-ahead)
+
+Decouples *publish* (commit) from *accept* (user sign-off). This is the default cadence for a stack;
+horizon 1 (below) reduces it to the per-diff gate.
+
+**Kickoff.** Run `diffstack init` once at the base — it sets `refs/diffstack/accepted/<branch>` to the
+current tip. The provisional range is `accepted..HEAD`. The `refs/diffstack/*` namespace never pushes and
+never shows on GitHub.
+
+**Publish.** After a diff passes compile + tests (Dev Loop steps 2–3) **and** the verdict is `LGTM`, the
+orchestrator commits it provisionally (one commit per diff) and continues to the next — it does NOT stop
+for per-diff sign-off. `diff-coder` never commits. The whole provisional range is reversible with
+`git reset --hard $(diffstack base)`.
+
+**Leash — stop and request batch review at the FIRST of:**
+1. **Verdict gate** — the diff-review verdict ≠ `LGTM`. Leave the tripping diff *uncommitted* in the
+   working tree so the user sees it live.
+2. **Escalation gate** — diff-coder returns `Status ∈ {DONE_WITH_CONCERNS, BLOCKED, NEEDS_CONTEXT}`.
+3. **Premise-failure gate** — a Validate-Premises check contradicts an assumption the plan relied on.
+4. **Checkpoint gate** — the plan marks the diff `checkpoint` (e.g. after an architectural / public-API diff).
+5. **Horizon gate** — the provisional count (`diffstack count`) reaches the horizon (default 3).
+
+Gates 1–4 are risk-driven and always fire, so early-catch is preserved on the diffs that matter; gate 5 is
+the tunable autonomy knob. The horizon count resets to 0 when the accepted ref advances.
+
+**Batch review at a stop.** Package the provisional range — `gen-review-package "$(diffstack base)" HEAD
+<outfile>` (range mode; pass base + HEAD as two args, not `$(diffstack range)` — that single `base..HEAD`
+token is read as an OUTFILE) — plus any uncommitted tripping diff, and present the provisional commits with
+their accumulated verdicts. Outcomes:
+- **Accept all** → `diffstack accept` advances the ref to HEAD; check the covered `User sign-off` boxes.
+- **Accept up to diff K** → `diffstack accept <K-sha>`; fold-down/restack the offending diff per
+  `### Iterating within the stack`; the provisional commits above it restack.
+- **Reject the range** → `git reset --hard $(diffstack base)`.
+
+**Horizon config (three levels, narrowest wins).**
+- CLAUDE.md default: `horizon = 3`.
+- Per-plan: a `Horizon: N` field in the plan header, and a `checkpoint` tag on specific diff headings.
+- Per-session: a user override ("run the whole stack, stop only on a gate", or "stop every diff" = horizon 1).
+
+**Guardrail note.** In this loop the orchestrator commits (provisionally) — a deliberate, scoped relaxation
+of the usual "the user stages and commits" guardrail. It is bounded to the diff-stack workflow and fully
+reversible via the accepted ref. (Follow-up: update the `feedback_workflow_guardrails` memory post-merge.)
 
 ### Sign-off Checklists in Plan Files
 
@@ -177,6 +223,10 @@ Check items (`[x]`) as you verify them. The **last item** in every sign-off chec
 ```
 - [ ] User sign-off
 ```
+
+Under the run-ahead model the acceptance items are checked by the agent as it verifies them, but the final
+`User sign-off` item is checked in a **batch** — when the range covering that diff is accepted (`diffstack
+accept`), tick every `User sign-off` box the acceptance covers. At horizon 1 it is checked per diff.
 
 ### Iterating within the stack
 
