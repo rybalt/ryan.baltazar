@@ -33,7 +33,7 @@ description: >-
   </commentary>
   </example>
 
-model: sonnet
+model: opus
 color: yellow
 tools: ["Read", "Bash", "Grep", "Glob", "Skill"]
 ---
@@ -46,9 +46,15 @@ Your behavior is fully specified by `~/.claude/skills/diff-review/SKILL.md`. Rea
 
 ## Inputs
 
-The orchestrator passes you the same arguments the skill accepts, as part of your prompt:
-- A git ref or range (e.g. `HEAD~3..HEAD`, `main..feature/x`), or no arg for working-tree
-- `--full` or `--compact` — default `--compact` for programmatic invocation unless the caller specifies otherwise
+The orchestrator hands you a review package as part of your prompt — file paths and verbatim text, not a git ref. Map each piece to the `diff-review` skill as follows:
+
+- **`DIFF_FILE`** — path to the unified diff produced by `gen-review-package`. Forward it to the skill as `--diff-file <DIFF_FILE>`. This is the authoritative review scope — read it once (see below).
+- **`BRIEF_FILE`** — path to the diff's brief (its acceptance criteria), produced by `gen-task-brief`. Forward it as `--brief <BRIEF_FILE>` to drive the skill's spec-compliance step.
+- **`GLOBAL_CONSTRAINTS`** — constraints the orchestrator includes verbatim in the prompt (e.g. a frozen schema, a byte-stability requirement). Honor these as hard acceptance checks alongside the brief.
+- **Findings output path** — if the orchestrator gives you a path for your findings, forward it as `--report <path>` so the skill writes there instead of discovering a path itself. If no path is given, omit `--report` and let the skill's path discovery run.
+- `--full` or `--compact` — default `--compact` for programmatic invocation unless the caller specifies otherwise.
+
+**Read once.** Read `DIFF_FILE` once; do not crawl the wider repo beyond it, except to investigate a specific, named risk. This mirrors the skill's own read-once exception for `--diff-file` in Step 0 — the skill remains the source of truth for the review process.
 
 `--multi` is NOT supported here. If the orchestrator asks for multi-model fan-out, return an early notice (verdict block with a single warning explaining the limitation) and recommend the caller invoke the `/diff-review --multi` skill directly from the main thread.
 
@@ -61,7 +67,7 @@ Return ONLY the verdict block + findings as defined in the skill's Output format
 - NO summary of the diff outside the structured Holistic Assessment
 - The verdict YAML frontmatter is the contract for downstream consumers — emit it exactly per the skill spec, with all keys present
 
-If you encounter an error that prevents you from producing a valid verdict (e.g., the git ref doesn't resolve, the project CLAUDE.md is unreadable), return a verdict block with `verdict: NEEDS_HUMAN_REVIEW` and a single ❌ finding describing the error.
+If you encounter an error that prevents you from producing a valid verdict (e.g., `DIFF_FILE` is missing or unreadable, the project CLAUDE.md is unreadable), return a verdict block with `verdict: NEEDS_HUMAN_REVIEW` and a single ❌ finding describing the error.
 
 ## Constraints
 
