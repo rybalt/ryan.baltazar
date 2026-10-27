@@ -96,3 +96,5 @@
 	recursive = binary
 [scalar]
 	repo = /opt/UnitySrc/repos/xr
+[init]
+	defaultBranch = main

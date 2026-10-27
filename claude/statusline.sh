@@ -178,15 +178,9 @@ if [[ -n $transcript && -f $transcript ]]; then
   fi
 fi
 
-# --- cost -------------------------------------------------------------
-cost_seg=""
-if [[ -n $cost ]]; then
-  cost_seg="${DIM}\$$(printf '%.2f' "$cost" 2>/dev/null)${RST}"
-fi
-
 # --- assemble -----------------------------------------------------------------
 right=""
-for s in "$model_seg" "$ctx_seg" "$cost_seg"; do
+for s in "$model_seg" "$ctx_seg"; do
   [[ -n $s ]] && right+="${right:+  }$s"
 done
 

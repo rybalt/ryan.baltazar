@@ -1,5 +1,15 @@
 # User Preferences
 
+## Knowledge Base
+
+A curated Unity XR/OpenXR PKM lives at `/opt/UnitySrc/repos/rybalt-wiki` — journal, tickets,
+package notes, design, and reference notes accumulated across sessions. Before researching
+XR/OpenXR code, tickets, or design from scratch — including before diving into source to
+understand how a subsystem or API works — check the wiki first with the `wiki-librarian`
+skill (`locate` for note coordinates, `answer` for a cited answer). Assume a topic you are
+about to investigate may already be analyzed there; dive into code only for what the wiki
+does not already cover.
+
 ## Shell Tools
 
 In Bash tool calls, prefer:
@@ -83,22 +93,36 @@ explicitly asks for full content in chat, override this rule.
 
 ## Delegation
 
-Once a plan is formed and execution begins, scoped work goes to subagents by default, not the main thread. During
-execution the main thread orchestrates: brief the subagent, review its output, integrate, and gate sign-off.
+Once a plan is formed and execution begins, **delegate by default.** The main thread is an orchestrator, not a
+worker: it briefs subagents, reviews their output, integrates results, and gates sign-off. The question is never
+"is this worth delegating?" — it is "is there a reason this _must_ stay inline?" If there isn't, it goes to a
+subagent. This default fails closed: a task shape nobody enumerated gets delegated rather than run inline — the
+opposite of a trigger allowlist, which leaks every case it forgot. The inline list below stays short because it
+is defined by the orchestrator's _role_, not by task type; roles don't proliferate the way task shapes do.
 
-**Delegate by default when:**
+**Stays inline — the orchestrator's own role (closed list):**
 
-- A plan exists with discrete, scoped steps (each with files, acceptance criteria, or pattern references)
-- Work can be fanned out across independent units (parallel audits, bulk migrations, per-extension binding generation)
-- The work is mechanical or pattern-following
-- A read-only question about the codebase — "where/how is X done", "find the pattern for X", "does X exist",
-  "validate X against the code" — comes up mid-task. Default these to `Explore` rather than running greps/reads
-  inline. Inline reads land in the main-thread context; a delegated `Explore` returns only the conclusion, keeping
-  the driver context lean. Read files inline only when you'll edit them or must reason over them line-by-line.
+- **Orchestration itself** — briefing subagents, reading their reports, integrating changes, deciding the next
+  step, gating sign-off.
+- **Reasoning with the user** — analysis, design discussion, planning, explaining a trade-off, answering a
+  question about work in flight. Thinking and talking are the driver's job, not a subagent's.
+- **Dev-loop mechanics the orchestrator owns** — compile, run tests, stage, commit (see the Diff Stack Workflow).
+- **A change you're reasoning over line-by-line, or one or two trivial lines**, where a subagent round-trip costs
+  more than the edit itself.
+- **Anything the user asked you to do hands-on.**
+
+Everything else defaults out — codebase searches, multi-hop investigations and audits, bulk or pattern-following
+edits, implementation diffs, diff review, research. When in doubt, delegate; don't wait to be prompted.
 
 **Pick the right agent (and model tier):**
 
-- Open-ended / read-only search across the codebase → `Explore` (`haiku`; `sonnet` if it needs light reasoning)
+- Single-hop read-only lookup — "where/how is X", "does X exist", "find the pattern for X", "validate X against
+  the code" → `Explore` (`haiku`; `sonnet` if it needs light reasoning). Returns the conclusion, not the file dump.
+- Multi-hop read-only _investigation_ — "verify X is set up", "audit the state of Y", "figure out whether Z
+  reproduces / is wired / is up to date", where each probe shapes the next and the deliverable is a report →
+  `general-purpose` (`sonnet`). It branches internally and hands back the reasoning chain you'd otherwise
+  assemble inline one command at a time. A task whose _shape emerges as you go_ is still delegable — brief the
+  goal, not the plan. "I don't know the search shape yet" is the incremental-probe trap, not a reason to stay inline.
 - Multi-step research questions → `general-purpose` (`sonnet`)
 - Implementation diffs from a stacked-diff plan → `diff-coder` (specify model at dispatch; fallback `sonnet`)
 - Diff review → `diff-reviewer` (specify model at dispatch; fallback `opus`)
@@ -117,17 +141,6 @@ research or synthesis → `sonnet`; judgment-heavy work (design, diff review, de
   re-enters the orchestrator's context. This is what keeps the driver context lean.
 - **Batch small same-shape work into one dispatch.** When several changes share a shape (the same edit
   across N files, a set of parallel migrations), brief them together rather than one dispatch each.
-
-**Do not delegate when:**
-
-- The work is one or two trivial lines (overhead exceeds benefit)
-- The scope is exploratory and likely to shift mid-execution
-- The user has explicitly asked for direct hands-on work
-
-Don't wait to be prompted — invoke the subagent once triggered. When a probe is read-only and you only need the
-answer, delegating to `Explore` is the default, not the exception — even a single "where is X" is worth a cheap
-subagent if it would otherwise pull file contents into the driver context.
-
 ## Diff Stack Workflow
 
 Work in small, atomic diffs. Each diff is self-contained, testable, and requires explicit user sign-off before
